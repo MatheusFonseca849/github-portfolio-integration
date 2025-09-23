@@ -1,9 +1,15 @@
 {
   "name": "portfolio-github-integration",
-  "version": "1.0.0",
-  "description": "Fetch GitHub repositories and custom metadata for dynamic portfolio rendering",
+  "version": "2.1.1",
+  "description": "Browser-native library to fetch GitHub repositories and custom metadata for dynamic portfolio rendering",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -11,28 +17,37 @@
     "test:watch": "npm run build && jest --watch",
     "test:custom": "npm run build && TEST_GITHUB_USERNAME=$npm_config_user node --experimental-vm-modules node_modules/.bin/jest --verbose"
   },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "github",
     "portfolio",
+    "browser",
+    "frontend",
+    "react",
+    "vue",
+    "angular",
     "repos",
     "integration"
   ],
   "author": "Matheus Fonseca",
   "license": "MIT",
-  "dependencies": {
-    "bottleneck": "^2.19.5",
-    "node-fetch": "^3.3.2"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@babel/core": "^7.28.4",
     "@babel/preset-env": "^7.28.3",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.0.0",
-    "@types/node-fetch": "^2.6.13",
     "babel-jest": "^30.1.2",
     "jest": "^30.1.3",
     "ts-jest": "^29.4.4",
     "typescript": "^5.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "browser": {
+    "./dist/index.js": "./dist/index.js"
+  }
 }

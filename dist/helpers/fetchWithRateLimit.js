@@ -1,36 +1,142 @@
-import fetch from "node-fetch";
-import Bottleneck from "bottleneck";
-import { getBackoffDelay } from "./getBackoffDelay"; // import helper
-// Bottleneck limiter: at most 1 request per 100ms
-const limiter = new Bottleneck({
-    minTime: 100, // 100ms between requests
-});
-async function fetchWithRateLimit(url, options, retryCount = 0, maxRetries = 5) {
-    return limiter.schedule(async () => {
+/**
+ * Production-ready browser rate limiter for GitHub API
+ * Implements sophisticated queuing, concurrency control, and retry logic
+ */
+class GitHubRateLimiter {
+    constructor() {
+        this.queue = [];
+        this.processing = false;
+        this.lastRequestTime = 0;
+        this.activeRequests = 0;
+        // Configuration optimized for GitHub API performance
+        this.config = {
+            minInterval: 50, // 50ms between requests (1200 req/min max)
+            maxConcurrent: 6, // More aggressive concurrent requests
+            maxRetries: 3, // Retry failed requests
+            backoffMultiplier: 2, // Exponential backoff
+            maxBackoffTime: 30000, // Max 30s backoff
+        };
+    }
+    /**
+     * Schedule a request with priority support
+     */
+    async schedule(fn, priority = 0) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ fn, resolve, reject, priority });
+            // Sort by priority (higher priority first)
+            this.queue.sort((a, b) => b.priority - a.priority);
+            this.processQueue();
+        });
+    }
+    /**
+     * Process the request queue with sophisticated rate limiting
+     */
+    async processQueue() {
+        if (this.processing || this.queue.length === 0 || this.activeRequests >= this.config.maxConcurrent) {
+            return;
+        }
+        this.processing = true;
+        while (this.queue.length > 0 && this.activeRequests < this.config.maxConcurrent) {
+            const item = this.queue.shift();
+            // Enforce minimum interval between requests
+            await this.enforceRateLimit();
+            this.activeRequests++;
+            this.executeRequest(item);
+        }
+        this.processing = false;
+    }
+    /**
+     * Enforce rate limiting with precise timing
+     */
+    async enforceRateLimit() {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+        if (timeSinceLastRequest < this.config.minInterval) {
+            const delay = this.config.minInterval - timeSinceLastRequest;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        this.lastRequestTime = Date.now();
+    }
+    /**
+     * Execute request with retry logic and error handling
+     */
+    async executeRequest(item) {
+        let retryCount = 0;
+        const attemptRequest = async () => {
+            try {
+                const result = await item.fn();
+                this.activeRequests--;
+                item.resolve(result);
+                this.processQueue(); // Continue processing
+            }
+            catch (error) {
+                retryCount++;
+                // Check if we should retry
+                if (retryCount <= this.config.maxRetries && this.shouldRetry(error)) {
+                    const backoffTime = Math.min(this.config.backoffMultiplier ** retryCount * 1000, this.config.maxBackoffTime);
+                    console.warn(`Request failed, retrying in ${backoffTime}ms (attempt ${retryCount}/${this.config.maxRetries})`);
+                    setTimeout(() => attemptRequest(), backoffTime);
+                }
+                else {
+                    this.activeRequests--;
+                    item.reject(error);
+                    this.processQueue(); // Continue processing
+                }
+            }
+        };
+        await attemptRequest();
+    }
+    /**
+     * Determine if an error is retryable
+     */
+    shouldRetry(error) {
+        // Retry on network errors, rate limits, and server errors
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            return true; // Network error
+        }
+        if (error.status) {
+            return error.status === 403 || // Rate limited
+                error.status === 429 || // Too many requests
+                error.status >= 500; // Server errors
+        }
+        return false;
+    }
+    /**
+     * Get current queue status for monitoring
+     */
+    getStatus() {
+        return {
+            queueLength: this.queue.length,
+            activeRequests: this.activeRequests,
+            processing: this.processing,
+        };
+    }
+}
+// Global rate limiter instance
+const rateLimiter = new GitHubRateLimiter();
+/**
+ * Browser-optimized fetch with rate limiting for GitHub API
+ */
+async function fetchWithRateLimit(url, options, retryCount = 0, maxRetries = 3) {
+    return rateLimiter.schedule(async () => {
         const res = await fetch(url, options);
+        // Handle GitHub API rate limiting headers
         const remaining = res.headers.get("X-RateLimit-Remaining");
         const reset = res.headers.get("X-RateLimit-Reset");
-        // Handle rate limiting (status 403 with remaining=0)
+        // If we're rate limited, throw an error to trigger retry
         if (res.status === 403 && remaining === "0") {
-            if (retryCount >= maxRetries) {
-                throw new Error(`Rate limit exceeded. Maximum retries (${maxRetries}) reached.`);
-            }
-            const resetTime = reset ? parseInt(reset, 10) * 1000 : Date.now() + 60000;
-            const waitTime = Math.max(resetTime - Date.now(), 1000);
-            console.warn(`Rate limit hit. Waiting ${Math.ceil(waitTime / 1000)}s before retry...`);
-            await new Promise((resolve) => setTimeout(resolve, waitTime));
-            return fetchWithRateLimit(url, options, retryCount + 1, maxRetries);
+            const resetTime = reset ? parseInt(reset) * 1000 : Date.now() + 60000;
+            const waitTime = Math.max(resetTime - Date.now(), 0);
+            const error = new Error(`GitHub API rate limit exceeded. Reset at ${new Date(resetTime).toISOString()}`);
+            error.status = 403;
+            error.waitTime = waitTime;
+            throw error;
         }
-        // Retry on transient server errors (5xx)
-        if (res.status >= 500 && res.status < 600 && retryCount < maxRetries) {
-            const delay = getBackoffDelay(retryCount + 1);
-            console.warn(`Server error ${res.status}. Retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            return fetchWithRateLimit(url, options, retryCount + 1, maxRetries);
-        }
-        // Log when nearing rate limits
-        if (remaining && parseInt(remaining) < 100) {
-            console.info(`GitHub API requests remaining: ${remaining}`);
+        // Handle other HTTP errors
+        if (!res.ok) {
+            const error = new Error(`HTTP ${res.status}: ${res.statusText}`);
+            error.status = res.status;
+            throw error;
         }
         return res;
     });
