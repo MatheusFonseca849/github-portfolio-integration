@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+
+# TypeScript source (publish compiled JS only)
+src/
+
+# TypeScript config
+tsconfig.json
+*.tsbuildinfo
+
+# Development and build tools
+jest.config.js
+babel.config.js
+.babelrc*
+
+# Test files
+src/tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Development dependencies
+package-lock.json
+
+# Build artifacts
+coverage/
+
+# Logs & temp files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Editor/IDE settings
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# CI/CD files
+.github/
+.travis.yml
+.circleci/
+
+# Git-related files
+.git/
+.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Documentation (keep README.md - remove this line if present)
+docs/
+examples/
