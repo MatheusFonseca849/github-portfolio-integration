@@ -1,8 +1,10 @@
 # Dependencies
 node_modules/
 
-# TypeScript source (publish compiled JS only)
+# TypeScript source (publish compiled JS only, but allow tests)
 src/
+!src/tests
+!src/tests/**
 
 # TypeScript config
 tsconfig.json
@@ -13,12 +15,13 @@ jest.config.js
 babel.config.js
 .babelrc*
 
-# Test files
-src/tests/
+# Test files (exclude by default, but explicitly allow our curated test directory and config)
 *.test.js
 *.test.ts
 *.spec.js
 *.spec.ts
+!src/tests/**
+!jest.config.js
 
 # Development dependencies
 package-lock.json

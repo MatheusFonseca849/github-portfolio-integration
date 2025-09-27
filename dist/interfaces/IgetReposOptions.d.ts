@@ -9,6 +9,6 @@ interface GetReposOptions {
     onProgress?: (processed: number, total: number, repoName: string) => void;
     /** Cache results for this many milliseconds (default: 20 minutes) */
     cacheMs?: number;
-  }
-
-  export default GetReposOptions
+}
+export default GetReposOptions;
+//# sourceMappingURL=IgetReposOptions.d.ts.map

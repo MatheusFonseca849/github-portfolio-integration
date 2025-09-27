@@ -44,7 +44,7 @@ export async function getRepos(
     : { 
         maxRepos: 100,
         parallel: true,
-        cacheMs: 5 * 60 * 1000, // 5 minutes
+        cacheMs: 20 * 60 * 1000, // 20 minutes
         ...options 
       };
 
@@ -177,6 +177,7 @@ async function processSingleRepo(
   return {
     name: repo.name,
     url: repo.html_url,
+    publicUrl: repoConfig.publicUrl || "",
     thumbnail: thumbnailUrl,
     info: repoConfig.info || "",
     title: repoConfig.title || repo.name,

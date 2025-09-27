@@ -38,7 +38,7 @@ const portfolioData = await getRepos('your-github-username', {
   token: 'ghp_your_token_here',        // GitHub Personal Access Token
   maxRepos: 50,                        // Limit repositories to scan (default: 100)
   parallel: true,                      // Enable parallel processing (default: true)
-  cacheMs: 5 * 60 * 1000,             // Cache results for 5 minutes (default: 5 min)
+  cacheMs: 20 * 60 * 1000,            // Cache results for 20 minutes (default: 20 min)
   onProgress: (processed, total, repoName) => {
     console.log(`Progress: ${processed}/${total} - Scanning ${repoName}`);
     // Update your UI progress bar here
@@ -117,6 +117,7 @@ Create a `src/repo.config.json` file in each repository you want to include:
   "published": true,
   "title": "My Awesome Project",
   "info": "A brief description of what this project does",
+  "publicUrl": "https://your-project-url.com",
   "thumbnail": "assets/screenshot.png",
   "branch": "main",
   "customConfig": {
@@ -134,6 +135,7 @@ Create a `src/repo.config.json` file in each repository you want to include:
 | `published` | boolean | ✅ | Whether to include this repo in portfolio results |
 | `title` | string | ❌ | Display title for the project |
 | `info` | string | ❌ | Project description |
+| `publicUrl` | string | ❌ | Public URL of the deployed project (e.g., Vercel/Netlify) |
 | `thumbnail` | string | ❌ | Path to thumbnail image (relative to repo root) |
 | `branch` | string | ❌ | Branch to use for thumbnail URL (defaults to "main") |
 | `customConfig` | object | ❌ | Custom configuration object for additional metadata |
@@ -146,6 +148,7 @@ The library returns an array of `RepoMetadata` objects:
 interface RepoMetadata {
   name: string;           // Repository name
   url: string;            // GitHub repository URL
+  publicUrl?: string;     // Public URL of the project
   thumbnail: string;      // Full URL to thumbnail image
   info: string;           // Project description
   title: string;          // Project title
@@ -160,6 +163,7 @@ interface RepoMetadata {
   {
     name: "my-portfolio-site",
     url: "https://github.com/username/my-portfolio-site",
+    publicUrl: "https://your-project-url.com",
     thumbnail: "https://raw.githubusercontent.com/username/my-portfolio-site/main/assets/screenshot.png",
     info: "A responsive portfolio website built with React",
     title: "Portfolio Website",
@@ -172,6 +176,7 @@ interface RepoMetadata {
   {
     name: "data-visualization-tool",
     url: "https://github.com/username/data-visualization-tool",
+    publicUrl: "https://your-project-url.com",
     thumbnail: "./assets/default.png",
     info: "Interactive charts and graphs for data analysis",
     title: "Data Viz Tool",
@@ -202,7 +207,7 @@ interface GetReposOptions {
   token?: string;           // GitHub Personal Access Token
   maxRepos?: number;        // Max repositories to scan (default: 100)
   parallel?: boolean;       // Enable parallel processing (default: true)
-  cacheMs?: number;         // Cache duration in ms (default: 300000 = 5 min)
+  cacheMs?: number;         // Cache duration in ms (default: 1200000 = 20 min)
   onProgress?: (processed: number, total: number, repoName: string) => void;
 }
 ```
@@ -215,6 +220,7 @@ Promise<RepoMetadata[]>
 interface RepoMetadata {
   name: string;           // Repository name
   url: string;            // GitHub repository URL  
+  publicUrl?: string;     // Public URL of the project
   thumbnail: string;      // Full URL to thumbnail image
   info: string;           // Project description
   title: string;          // Project title
@@ -310,7 +316,7 @@ This library is built for **maximum performance** with enterprise-grade optimiza
 - **Parallel Processing**: Scans multiple repositories simultaneously (3-5x faster than sequential)
 - **Smart Filtering**: Automatically skips forks, archived repos, and unlikely candidates
 - **Repository Limiting**: Configurable limit (default: 100 most recent repos)
-- **In-Memory Caching**: Results cached for 5 minutes by default (configurable)
+- **In-Memory Caching**: Results cached for 20 minutes by default (configurable)
 - **Progress Callbacks**: Real-time progress updates for better UX
 - **Early Termination**: Stops scanning when sufficient results are found
 
@@ -344,6 +350,76 @@ This library is built for **maximum performance** with enterprise-grade optimiza
 - **Frontend Framework**: Works with React, Vue, Angular, Svelte, or vanilla JavaScript
 - **Module System**: ES Modules support required
 - **TypeScript**: 5.0+ (for development only)
+
+## 📚 Examples & Documentation
+
+### Live Examples
+
+We provide comprehensive example applications demonstrating all library features:
+
+- **[React Example](./examples/React/github-integration-example/)** - Complete React app with Create React App
+- **[Vue.js Example](./examples/Vue/github-integration-example/)** - Modern Vue 3 app with Composition API and Vite
+- **[Vanilla JavaScript Example](./examples/VanilaJS/)** - Pure HTML/CSS/JS with no build tools required
+
+All examples include:
+- Interactive configuration forms for all library options
+- Real-time progress tracking with visual progress bars
+- Comprehensive results display with repository cards
+- Error handling and troubleshooting guidance
+- Responsive design for desktop and mobile
+- Professional UI with modern styling
+
+### Running the Examples
+
+```bash
+# React Example
+cd examples/React/github-integration-example
+npm install
+npm start
+
+# Vue.js Example  
+cd examples/Vue/github-integration-example
+npm install
+npm run dev
+
+# Vanilla JavaScript Example (CDN version - no installation needed)
+cd examples/VanilaJS
+# Open index-cdn.html in your browser
+
+# Vanilla JavaScript Example (local version)
+cd examples/VanilaJS
+npm install
+npm start
+```
+
+## 🐛 Issues & Support
+
+### Repository
+
+This library is open source and available on GitHub:
+**[https://github.com/MatheusFonseca849/github-portfolio-integration](https://github.com/MatheusFonseca849/github-portfolio-integration)**
+
+### Reporting Issues
+
+If you encounter any bugs, issues, or have feature requests, please submit them on our GitHub repository:
+
+1. **Check existing issues** first to avoid duplicates
+2. **Create a new issue** with detailed information:
+   - Library version you're using
+   - Framework and version (React, Vue, etc.)
+   - Steps to reproduce the issue
+   - Expected vs actual behavior
+   - Browser and operating system details
+   - Any error messages or console logs
+
+**[Submit an Issue →](https://github.com/MatheusFonseca849/github-portfolio-integration/issues/new)**
+
+### Getting Help
+
+- 📖 **Documentation**: This README contains comprehensive usage instructions
+- 💡 **Examples**: Check the example applications in the `examples/` directory
+- 🐛 **Bug Reports**: Use GitHub Issues for bug reports and feature requests
+- 💬 **Questions**: GitHub Discussions for general questions and community support
 
 ## License
 

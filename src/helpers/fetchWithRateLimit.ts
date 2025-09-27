@@ -1,6 +1,3 @@
-// Browser-native fetch with enterprise-grade rate limiting
-import { getBackoffDelay } from "./getBackoffDelay.js";
-
 /**
  * Production-ready browser rate limiter for GitHub API
  * Implements sophisticated queuing, concurrency control, and retry logic
@@ -151,8 +148,6 @@ const rateLimiter = new GitHubRateLimiter();
 async function fetchWithRateLimit(
   url: string,
   options: any,
-  retryCount = 0,
-  maxRetries = 3
 ): Promise<Response> {
   return rateLimiter.schedule(async () => {
     const res = await fetch(url, options);

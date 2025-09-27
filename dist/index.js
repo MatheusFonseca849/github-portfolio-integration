@@ -1,22 +1,6 @@
 import fetchWithRateLimit from "./helpers/fetchWithRateLimit.js";
-// Simple in-memory cache for browser environments
-const cache = new Map();
-/**
- * Get data from cache if it's still valid
- */
-function getFromCache(key, maxAge) {
-    if (maxAge <= 0)
-        return null;
-    const cached = cache.get(key);
-    if (!cached)
-        return null;
-    const age = Date.now() - cached.timestamp;
-    if (age > maxAge) {
-        cache.delete(key);
-        return null;
-    }
-    return cached.data;
-}
+import { getFromCache } from "./helpers/getFromCache.js";
+import { cache } from "./helpers/getFromCache.js";
 /**
  * Store data in cache
  */
@@ -30,25 +14,6 @@ function setCache(key, data) {
  * @param options - Configuration options or token string for backward compatibility
  * @returns Promise that resolves to an array of RepoMetadata objects for published repositories
  * @throws Error if username is invalid or GitHub API is unreachable
- *
- * @example
- * ```typescript
- * // Basic usage (public repositories only)
- * const repos = await getRepos('octocat');
- *
- * // With token (backward compatible)
- * const repos = await getRepos('octocat', 'ghp_xxxxxxxxxxxx');
- *
- * // With full options
- * const repos = await getRepos('octocat', {
- *   token: 'ghp_xxxxxxxxxxxx',
- *   maxRepos: 50,
- *   parallel: true,
- *   onProgress: (processed, total, repoName) => {
- *     console.log(`Processing ${repoName}: ${processed}/${total}`);
- *   }
- * });
- * ```
  */
 export async function getRepos(username, options) {
     // Input validation
@@ -66,7 +31,7 @@ export async function getRepos(username, options) {
         : {
             maxRepos: 100,
             parallel: true,
-            cacheMs: 5 * 60 * 1000, // 5 minutes
+            cacheMs: 20 * 60 * 1000, // 20 minutes
             ...options
         };
     // Check cache first
@@ -161,6 +126,7 @@ async function processSingleRepo(repo, username, headers) {
     return {
         name: repo.name,
         url: repo.html_url,
+        publicUrl: repoConfig.publicUrl || "",
         thumbnail: thumbnailUrl,
         info: repoConfig.info || "",
         title: repoConfig.title || repo.name,

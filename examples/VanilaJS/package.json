@@ -1,0 +1,17 @@
+{
+  "name": "github-integration-vanilla-example",
+  "version": "1.0.0",
+  "description": "Vanilla JavaScript example for portfolio-github-integration library",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080 || python -m http.server 8080 || npx serve .",
+    "serve": "npx serve .",
+    "install-lib": "npm install ../../../portfolio-github-integration-2.1.2.tgz"
+  },
+  "dependencies": {
+    "portfolio-github-integration": "file:../../portfolio-github-integration-2.1.2.tgz"
+  },
+  "devDependencies": {
+    "serve": "^14.0.0"
+  }
+}

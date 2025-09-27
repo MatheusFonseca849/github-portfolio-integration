@@ -117,7 +117,7 @@ const rateLimiter = new GitHubRateLimiter();
 /**
  * Browser-optimized fetch with rate limiting for GitHub API
  */
-async function fetchWithRateLimit(url, options, retryCount = 0, maxRetries = 3) {
+async function fetchWithRateLimit(url, options) {
     return rateLimiter.schedule(async () => {
         const res = await fetch(url, options);
         // Handle GitHub API rate limiting headers
