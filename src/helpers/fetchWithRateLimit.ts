@@ -2,6 +2,29 @@
  * Production-ready browser rate limiter for GitHub API
  * Implements sophisticated queuing, concurrency control, and retry logic
  */
+
+// Priority constants for different types of requests
+export const PRIORITY = {
+  CRITICAL: 10,     // Repository listing (must happen first)
+  HIGH: 8,          // Recently updated repos (< 30 days)
+  MEDIUM: 5,        // Moderately recent repos (< 180 days)
+  LOW: 2,           // Older repos (> 180 days)
+  RETRY: 1,         // Retry attempts
+  DEFAULT: 0        // Default priority
+} as const;
+
+/**
+ * Calculate priority for a repository based on its last update time
+ */
+export function calculateRepoPriority(repo: any): number {
+  if (!repo.updated_at) return PRIORITY.LOW;
+  
+  const daysSinceUpdate = (Date.now() - new Date(repo.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+  
+  if (daysSinceUpdate < 30) return PRIORITY.HIGH;      // Recently updated
+  if (daysSinceUpdate < 180) return PRIORITY.MEDIUM;   // Moderately recent
+  return PRIORITY.LOW;                                  // Older repos
+}
 class GitHubRateLimiter {
   private queue: Array<{
     fn: () => Promise<any>;
@@ -148,6 +171,7 @@ const rateLimiter = new GitHubRateLimiter();
 async function fetchWithRateLimit(
   url: string,
   options: any,
+  priority: number = 0
 ): Promise<Response> {
   return rateLimiter.schedule(async () => {
     const res = await fetch(url, options);
@@ -175,7 +199,7 @@ async function fetchWithRateLimit(
     }
 
     return res;
-  });
+  }, priority);
 }
 
 export default fetchWithRateLimit;

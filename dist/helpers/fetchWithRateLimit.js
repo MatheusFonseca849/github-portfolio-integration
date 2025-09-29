@@ -2,6 +2,28 @@
  * Production-ready browser rate limiter for GitHub API
  * Implements sophisticated queuing, concurrency control, and retry logic
  */
+// Priority constants for different types of requests
+export const PRIORITY = {
+    CRITICAL: 10, // Repository listing (must happen first)
+    HIGH: 8, // Recently updated repos (< 30 days)
+    MEDIUM: 5, // Moderately recent repos (< 180 days)
+    LOW: 2, // Older repos (> 180 days)
+    RETRY: 1, // Retry attempts
+    DEFAULT: 0 // Default priority
+};
+/**
+ * Calculate priority for a repository based on its last update time
+ */
+export function calculateRepoPriority(repo) {
+    if (!repo.updated_at)
+        return PRIORITY.LOW;
+    const daysSinceUpdate = (Date.now() - new Date(repo.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceUpdate < 30)
+        return PRIORITY.HIGH; // Recently updated
+    if (daysSinceUpdate < 180)
+        return PRIORITY.MEDIUM; // Moderately recent
+    return PRIORITY.LOW; // Older repos
+}
 class GitHubRateLimiter {
     constructor() {
         this.queue = [];
@@ -117,7 +139,7 @@ const rateLimiter = new GitHubRateLimiter();
 /**
  * Browser-optimized fetch with rate limiting for GitHub API
  */
-async function fetchWithRateLimit(url, options) {
+async function fetchWithRateLimit(url, options, priority = 0) {
     return rateLimiter.schedule(async () => {
         const res = await fetch(url, options);
         // Handle GitHub API rate limiting headers
@@ -139,7 +161,7 @@ async function fetchWithRateLimit(url, options) {
             throw error;
         }
         return res;
-    });
+    }, priority);
 }
 export default fetchWithRateLimit;
 //# sourceMappingURL=fetchWithRateLimit.js.map

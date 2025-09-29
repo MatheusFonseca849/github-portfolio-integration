@@ -1,7 +1,7 @@
 // Use native fetch API (available in browsers and Node.js 18+)
 import RepoMetadata from "./interfaces/IrepoMetadata.js";
 import GitHubFileContent from "./interfaces/IgithubFileContent.js";
-import fetchWithRateLimit from "./helpers/fetchWithRateLimit.js";
+import fetchWithRateLimit, { PRIORITY, calculateRepoPriority } from "./helpers/fetchWithRateLimit.js";
 import GetReposOptions from "./interfaces/IgetReposOptions.js";
 import { getFromCache } from "./helpers/getFromCache.js";
 import { cache } from "./helpers/getFromCache.js";
@@ -60,10 +60,11 @@ export async function getRepos(
   };
   if (config.token) headers.Authorization = `token ${config.token}`;
 
-  // Fetch repositories with pagination support
+  // Fetch repositories with pagination support (highest priority)
   const reposRes = await fetchWithRateLimit(
     `https://api.github.com/users/${cleanUsername}/repos?per_page=100&sort=updated`,
-    { headers }
+    { headers },
+    PRIORITY.CRITICAL
   );
   const allRepos = await reposRes.json() as any[];
 
@@ -150,9 +151,13 @@ async function processSingleRepo(
   username: string, 
   headers: any
 ): Promise<RepoMetadata | null> {
+  // Calculate priority based on repo freshness
+  const priority = calculateRepoPriority(repo);
+  
   const configRes = await fetchWithRateLimit(
     `https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`,
-    { headers }
+    { headers },
+    priority
   );
 
   if (!configRes.ok) return null;

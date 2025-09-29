@@ -357,9 +357,9 @@ This library is built for **maximum performance** with enterprise-grade optimiza
 
 We provide comprehensive example applications demonstrating all library features:
 
-- **[React Example](./examples/React/github-integration-example/)** - Complete React app with Create React App
-- **[Vue.js Example](./examples/Vue/github-integration-example/)** - Modern Vue 3 app with Composition API and Vite
-- **[Vanilla JavaScript Example](./examples/VanilaJS/)** - Pure HTML/CSS/JS with no build tools required
+- **[React Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/React/github-integration-example)** - Complete React app with Create React App
+- **[Vue.js Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/Vue/github-integration-example)** - Modern Vue 3 app with Composition API and Vite
+- **[Vanilla JavaScript Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/VanilaJS)** - Pure HTML/CSS/JS with no build tools required
 
 All examples include:
 - Interactive configuration forms for all library options
@@ -369,28 +369,15 @@ All examples include:
 - Responsive design for desktop and mobile
 - Professional UI with modern styling
 
-### Running the Examples
+### Accessing the Examples
 
-```bash
-# React Example
-cd examples/React/github-integration-example
-npm install
-npm start
+All example applications are available in the GitHub repository. Each example includes detailed setup and running instructions in its respective README file:
 
-# Vue.js Example  
-cd examples/Vue/github-integration-example
-npm install
-npm run dev
+- **React Example**: Full-featured React application with comprehensive documentation
+- **Vue.js Example**: Modern Vue 3 implementation using Composition API and Vite
+- **Vanilla JavaScript Example**: Two versions available - CDN version (no setup required) and local version
 
-# Vanilla JavaScript Example (CDN version - no installation needed)
-cd examples/VanilaJS
-# Open index-cdn.html in your browser
-
-# Vanilla JavaScript Example (local version)
-cd examples/VanilaJS
-npm install
-npm start
-```
+Visit the [GitHub repository](https://github.com/MatheusFonseca849/github-portfolio-integration) to explore the complete example implementations.
 
 ## 🐛 Issues & Support
 
@@ -417,7 +404,7 @@ If you encounter any bugs, issues, or have feature requests, please submit them 
 ### Getting Help
 
 - 📖 **Documentation**: This README contains comprehensive usage instructions
-- 💡 **Examples**: Check the example applications in the `examples/` directory
+- 💡 **Examples**: Check the example applications in the [GitHub repository](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples)
 - 🐛 **Bug Reports**: Use GitHub Issues for bug reports and feature requests
 - 💬 **Questions**: GitHub Discussions for general questions and community support
 

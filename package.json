@@ -1,6 +1,6 @@
 {
   "name": "portfolio-github-integration",
-  "version": "2.1.2",
+  "version": "2.3.0",
   "description": "Browser-native library to fetch GitHub repositories and custom metadata for dynamic portfolio rendering",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

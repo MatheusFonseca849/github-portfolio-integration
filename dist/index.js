@@ -1,4 +1,4 @@
-import fetchWithRateLimit from "./helpers/fetchWithRateLimit.js";
+import fetchWithRateLimit, { PRIORITY, calculateRepoPriority } from "./helpers/fetchWithRateLimit.js";
 import { getFromCache } from "./helpers/getFromCache.js";
 import { cache } from "./helpers/getFromCache.js";
 /**
@@ -45,8 +45,8 @@ export async function getRepos(username, options) {
     };
     if (config.token)
         headers.Authorization = `token ${config.token}`;
-    // Fetch repositories with pagination support
-    const reposRes = await fetchWithRateLimit(`https://api.github.com/users/${cleanUsername}/repos?per_page=100&sort=updated`, { headers });
+    // Fetch repositories with pagination support (highest priority)
+    const reposRes = await fetchWithRateLimit(`https://api.github.com/users/${cleanUsername}/repos?per_page=100&sort=updated`, { headers }, PRIORITY.CRITICAL);
     const allRepos = await reposRes.json();
     // Filter and limit repositories for better performance
     const repos = allRepos
@@ -107,7 +107,9 @@ async function processReposSequential(repos, username, headers, config) {
  * Process a single repository to check for portfolio config
  */
 async function processSingleRepo(repo, username, headers) {
-    const configRes = await fetchWithRateLimit(`https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`, { headers });
+    // Calculate priority based on repo freshness
+    const priority = calculateRepoPriority(repo);
+    const configRes = await fetchWithRateLimit(`https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`, { headers }, priority);
     if (!configRes.ok)
         return null;
     const configData = await configRes.json();

@@ -29,6 +29,9 @@ package-lock.json
 # Build artifacts
 coverage/
 
+# Examples
+examples/
+
 # Logs & temp files
 npm-debug.log*
 yarn-debug.log*
