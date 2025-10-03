@@ -6,9 +6,12 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    }
+      "browser": "./dist/index.js",
+      "node": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./server": "./dist/helpers/getReposServer.js",
+    "./browser": "./dist/helpers/getReposBrowser.js"
   },
   "scripts": {
     "build": "tsc",
