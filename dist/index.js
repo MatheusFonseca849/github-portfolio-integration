@@ -32,6 +32,7 @@ export async function getRepos(username, options) {
             maxRepos: 100,
             parallel: true,
             cacheMs: 20 * 60 * 1000, // 20 minutes
+            debug: false,
             ...options
         };
     // Check cache first
@@ -46,13 +47,13 @@ export async function getRepos(username, options) {
     if (config.token)
         headers.Authorization = `token ${config.token}`;
     // Fetch repositories with pagination support (highest priority)
-    const reposRes = await fetchWithRateLimit(`https://api.github.com/users/${cleanUsername}/repos?per_page=100&sort=updated`, { headers }, PRIORITY.CRITICAL);
+    const reposRes = await fetchWithRateLimit(`https://api.github.com/users/${cleanUsername}/repos?per_page=${config.maxRepos || 100}&sort=updated`, { headers }, PRIORITY.CRITICAL);
     const allRepos = await reposRes.json();
     // Filter and limit repositories for better performance
     const repos = allRepos
         .filter(repo => !repo.fork && !repo.archived) // Skip forks and archived repos
         .slice(0, config.maxRepos || 100); // Limit number of repos to check
-    console.log(`🔍 Scanning ${repos.length} repositories for portfolio configs...`);
+    config.debug && console.log(`🔍 Scanning ${repos.length} repositories for portfolio configs...`);
     let portfolioRepos;
     if (config.parallel) {
         // Parallel processing for maximum speed
@@ -64,7 +65,7 @@ export async function getRepos(username, options) {
     }
     // Cache the results
     setCache(cacheKey, portfolioRepos);
-    console.log(`✅ Found ${portfolioRepos.length} published repositories`);
+    config.debug && console.log(`✅ Found ${portfolioRepos.length} published repositories`);
     return portfolioRepos;
 }
 /**
@@ -77,7 +78,7 @@ async function processReposParallel(repos, username, headers, config) {
             return await processSingleRepo(repo, username, headers);
         }
         catch (err) {
-            console.warn(`⚠️ Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            config.debug && console.warn(`⚠️ Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
             return null;
         }
     }));
@@ -98,7 +99,7 @@ async function processReposSequential(repos, username, headers, config) {
             }
         }
         catch (err) {
-            console.warn(`⚠️ Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            config.debug && console.warn(`⚠️ Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
     }
     return portfolioRepos;
@@ -122,17 +123,19 @@ async function processSingleRepo(repo, username, headers) {
     const repoConfig = JSON.parse(contentString);
     if (!repoConfig.published)
         return null;
-    const thumbnailUrl = repoConfig.thumbnail
-        ? `https://raw.githubusercontent.com/${username}/${repo.name}/${repoConfig.branch || "main"}/${repoConfig.thumbnail}`
-        : "./assets/default.png";
-    return {
+    let results = {
         name: repo.name,
         url: repo.html_url,
         publicUrl: repoConfig.publicUrl || "",
-        thumbnail: thumbnailUrl,
         info: repoConfig.info || "",
         title: repoConfig.title || repo.name,
         customConfig: repoConfig.customConfig,
     };
+    const thumbnailUrl = repoConfig.thumbnail
+        ? `https://raw.githubusercontent.com/${username}/${repo.name}/${repoConfig.branch || "main"}/${repoConfig.thumbnail}`
+        : null;
+    if (thumbnailUrl)
+        results.thumbnail = thumbnailUrl;
+    return results;
 }
 //# sourceMappingURL=index.js.map

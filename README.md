@@ -39,6 +39,7 @@ const portfolioData = await getRepos('your-github-username', {
   maxRepos: 50,                        // Limit repositories to scan (default: 100)
   parallel: true,                      // Enable parallel processing (default: true)
   cacheMs: 20 * 60 * 1000,            // Cache results for 20 minutes (default: 20 min)
+  debug: true,                         // Enable debug console logging (default: false)
   onProgress: (processed, total, repoName) => {
     console.log(`Progress: ${processed}/${total} - Scanning ${repoName}`);
     // Update your UI progress bar here
@@ -65,6 +66,7 @@ function Portfolio() {
         const data = await getRepos('your-username', {
           token: process.env.REACT_APP_GITHUB_TOKEN,
           maxRepos: 30,
+          debug: false,                    // Disable debug logs in production
           onProgress: (current, total, repoName) => {
             setProgress({ current, total });
           }
@@ -94,7 +96,7 @@ function Portfolio() {
         <div key={repo.name}>
           <h3>{repo.title}</h3>
           <p>{repo.info}</p>
-          <img src={repo.thumbnail} alt={repo.title} />
+          {repo.thumbnail && <img src={repo.thumbnail} alt={repo.title} />}
         </div>
       ))}
     </div>
@@ -149,7 +151,7 @@ interface RepoMetadata {
   name: string;           // Repository name
   url: string;            // GitHub repository URL
   publicUrl?: string;     // Public URL of the project
-  thumbnail: string;      // Full URL to thumbnail image
+  thumbnail?: string;     // Full URL to thumbnail image (optional)
   info: string;           // Project description
   title: string;          // Project title
   customConfig?: Object;  // Optional custom configuration object
@@ -177,7 +179,7 @@ interface RepoMetadata {
     name: "data-visualization-tool",
     url: "https://github.com/username/data-visualization-tool",
     publicUrl: "https://your-project-url.com",
-    thumbnail: "./assets/default.png",
+    thumbnail: "https://raw.githubusercontent.com/username/data-visualization-tool/main/assets/preview.png",
     info: "Interactive charts and graphs for data analysis",
     title: "Data Viz Tool",
     customConfig: {
@@ -208,6 +210,7 @@ interface GetReposOptions {
   maxRepos?: number;        // Max repositories to scan (default: 100)
   parallel?: boolean;       // Enable parallel processing (default: true)
   cacheMs?: number;         // Cache duration in ms (default: 1200000 = 20 min)
+  debug?: boolean;          // Enable debug console logging (default: false)
   onProgress?: (processed: number, total: number, repoName: string) => void;
 }
 ```
@@ -221,7 +224,7 @@ interface RepoMetadata {
   name: string;           // Repository name
   url: string;            // GitHub repository URL  
   publicUrl?: string;     // Public URL of the project
-  thumbnail: string;      // Full URL to thumbnail image
+  thumbnail?: string;     // Full URL to thumbnail image (optional)
   info: string;           // Project description
   title: string;          // Project title
   customConfig?: any;     // Custom configuration object
@@ -259,13 +262,31 @@ const repos = await getRepos('username', {
 | No token | 60 requests |
 | With token | 5,000 requests |
 
+## 🐛 Debug Mode
+
+Enable debug mode to see detailed console logging during repository scanning:
+
+```typescript
+const repos = await getRepos('username', {
+  debug: true  // Enable console logging (default: false)
+});
+```
+
+**Debug output includes**:
+- Repository scanning progress
+- Skipped repositories with reasons
+- Processing status updates
+- Error details for troubleshooting
+
+**Production recommendation**: Keep `debug: false` (default) in production environments to avoid console pollution.
+
 ## Error Handling
 
 The library gracefully handles:
-- Repositories without configuration files (skipped)
-- Invalid JSON in configuration files (skipped with warning)
-- Network errors (logged and skipped)
-- Missing thumbnails (falls back to default)
+- Repositories without configuration files (skipped silently)
+- Invalid JSON in configuration files (skipped with warning in debug mode)
+- Network errors (logged in debug mode and skipped)
+- Missing thumbnails (no fallback - thumbnail property will be undefined)
 
 ## Development
 

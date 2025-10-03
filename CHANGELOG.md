@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2025-10-02
+
+### Added
+- **Debug Mode**: Added `debug` option to `GetReposOptions` interface for controlling console logging output
+- **Smart Console Logging**: All console.log and console.warn statements now respect the debug flag (default: false)
+
+### Changed
+- **BREAKING**: `thumbnail` property in `RepoMetadata` interface is now optional (`string | null` → `string?`)
+- **Dynamic Pagination**: Repository API calls now use `maxRepos` setting instead of hardcoded `per_page=100`
+- **Thumbnail Handling**: Repositories without thumbnails no longer receive a default image fallback
+
+### Removed
+- **Default Thumbnail Asset**: Removed `src/assets/default.png` file (~1.4MB package size reduction)
+- **Thumbnail Fallback Logic**: No more automatic fallback to default thumbnail
+
+### Performance Improvements
+- **Package Size**: Reduced npm package size by ~95% through removal of default thumbnail asset
+- **API Efficiency**: Repository pagination now matches actual `maxRepos` requirement instead of over-fetching
+- **Cleaner Output**: Debug logs only appear when explicitly enabled via `debug: true`
+
+### Technical Details
+- Updated `GetReposOptions` interface with `debug?: boolean` property
+- Modified `RepoMetadata` interface: `thumbnail: string` → `thumbnail?: string | null`
+- Enhanced error handling to respect debug mode setting
+- Maintained full backward compatibility for all existing options
+
+## [2.3.1] - 2025-09-28
+
+### Fixed
+- **Source Map Resolution**: Fixed source map warnings in React/webpack environments by including TypeScript source files in npm package
+- **Package Distribution**: Updated `files` field in package.json to include `src/**/*` for proper source map support
+
 ## [2.3.0] - 2025-09-28
 
 ### Added

@@ -1,6 +1,5 @@
-// Import the library using ES modules with import map
-// Note: This requires serving the files through a web server
-import { getRepos } from './node_modules/portfolio-github-integration/dist/index.js';
+// Import the library from CDN using import map
+import { getRepos } from 'portfolio-github-integration';
 
 // DOM elements
 const form = document.getElementById('config-form');
@@ -9,6 +8,7 @@ const tokenInput = document.getElementById('token');
 const maxReposInput = document.getElementById('maxRepos');
 const cacheMsInput = document.getElementById('cacheMs');
 const parallelInput = document.getElementById('parallel');
+const debugInput = document.getElementById('debug');
 const submitBtn = document.getElementById('submit-btn');
 
 const progressSection = document.getElementById('progress-section');
@@ -110,7 +110,7 @@ function createRepoCard(repo) {
   card.appendChild(header);
   
   // Thumbnail
-  if (repo.thumbnail && repo.thumbnail !== './assets/default.png') {
+  if (repo.thumbnail) {
     const thumbnailDiv = document.createElement('div');
     thumbnailDiv.className = 'repo-thumbnail';
     
@@ -191,6 +191,7 @@ async function handleSubmit(event) {
       maxRepos: parseInt(maxReposInput.value) || 100,
       parallel: parallelInput.checked,
       cacheMs: (parseInt(cacheMsInput.value) || 20) * 60 * 1000,
+      debug: debugInput.checked,
       onProgress: updateProgress
     };
     
@@ -222,7 +223,5 @@ cacheMsInput.addEventListener('input', updateCacheDisplay);
 // Initialize cache display
 updateCacheDisplay();
 
-// Check if the library is available
-if (typeof getRepos === 'undefined') {
-  showError('Library not loaded. Please ensure you are serving this page through a web server and the portfolio-github-integration library is installed.');
-}
+// Show success message that library loaded
+console.log('✅ Portfolio GitHub Integration library loaded successfully from CDN!');

@@ -3,31 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitHub Portfolio Integration Demo - Vanilla JS (CDN)</title>
+    <title>GitHub Portfolio Integration Demo - Vanilla JS</title>
     <link rel="stylesheet" href="styles.css">
-    
-    <!-- Import map for ES modules -->
-    <script type="importmap">
-    {
-        "imports": {
-            "portfolio-github-integration": "https://unpkg.com/portfolio-github-integration@latest/dist/index.js"
-        }
-    }
-    </script>
 </head>
 <body>
     <div class="app">
         <header class="app-header">
             <h1>GitHub Portfolio Integration Demo</h1>
-            <p>Test the portfolio-github-integration library with vanilla JavaScript (CDN version)</p>
+            <p>Test the portfolio-github-integration library with vanilla JavaScript</p>
         </header>
 
         <main class="app-main">
-            <div class="info-banner">
-                <h3>📦 CDN Version</h3>
-                <p>This version loads the library directly from CDN using import maps. No build tools or npm installation required!</p>
-            </div>
-
             <form id="config-form" class="config-form">
                 <div class="form-section">
                     <h2>Basic Configuration</h2>
@@ -88,6 +74,17 @@
                         </label>
                         <small>Process repositories in parallel for faster results</small>
                     </div>
+
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input
+                                id="debug"
+                                type="checkbox"
+                            />
+                            Enable Debug Mode
+                        </label>
+                        <small>Show detailed console logging during repository scanning</small>
+                    </div>
                 </div>
 
                 <button type="submit" id="submit-btn" class="submit-btn">
@@ -136,7 +133,7 @@
         </main>
     </div>
 
-    <!-- Import the library using CDN -->
-    <script type="module" src="script-cdn.js"></script>
+    <!-- Import the library as ES module -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>

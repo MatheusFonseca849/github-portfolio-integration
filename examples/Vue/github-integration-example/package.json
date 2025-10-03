@@ -12,7 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "portfolio-github-integration": "file:../../../portfolio-github-integration-2.1.2.tgz",
+    "portfolio-github-integration": "^2.4.0",
     "vue": "^3.4.0"
   },
   "devDependencies": {

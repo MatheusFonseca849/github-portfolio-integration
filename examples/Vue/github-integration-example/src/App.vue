@@ -8,6 +8,7 @@ const token = ref('')
 const maxRepos = ref(100)
 const parallel = ref(true)
 const cacheMs = ref(20 * 60 * 1000) // 20 minutes
+const debug = ref(false)
 const loading = ref(false)
 const repos = ref([])
 const error = ref('')
@@ -53,6 +54,7 @@ const handleSubmit = async () => {
       maxRepos: parseInt(maxRepos.value) || 100,
       parallel: parallel.value,
       cacheMs: parseInt(cacheMs.value) || 20 * 60 * 1000,
+      debug: debug.value,
       onProgress: (current, total, repoName) => {
         progress.value = { current, total, repoName }
       }
@@ -141,6 +143,17 @@ const handleSubmit = async () => {
             </label>
             <small>Process repositories in parallel for faster results</small>
           </div>
+
+          <div class="form-group checkbox-group">
+            <label>
+              <input
+                type="checkbox"
+                v-model="debug"
+              />
+              Enable Debug Mode
+            </label>
+            <small>Show detailed console logging during repository scanning</small>
+          </div>
         </div>
 
         <button 
@@ -193,7 +206,7 @@ const handleSubmit = async () => {
               </div>
             </div>
             
-            <div v-if="repo.thumbnail && repo.thumbnail !== './assets/default.png'" class="repo-thumbnail">
+            <div v-if="repo.thumbnail" class="repo-thumbnail">
               <img :src="repo.thumbnail" :alt="repo.title || repo.name" />
             </div>
             

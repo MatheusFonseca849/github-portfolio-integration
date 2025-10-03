@@ -8,6 +8,7 @@ function App() {
   const [maxRepos, setMaxRepos] = useState(100);
   const [parallel, setParallel] = useState(true);
   const [cacheMs, setCacheMs] = useState(20 * 60 * 1000); // 20 minutes
+  const [debug, setDebug] = useState(false);
   const [loading, setLoading] = useState(false);
   const [repos, setRepos] = useState([]);
   const [error, setError] = useState('');
@@ -31,6 +32,7 @@ function App() {
         maxRepos: parseInt(maxRepos) || 100,
         parallel,
         cacheMs: parseInt(cacheMs) || 20 * 60 * 1000,
+        debug,
         onProgress: (current, total, repoName) => {
           setProgress({ current, total, repoName });
         }
@@ -47,7 +49,7 @@ function App() {
       setLoading(false);
       setProgress({ current: 0, total: 0, repoName: '' });
     }
-  }, [username, token, maxRepos, parallel, cacheMs]);
+  }, [username, token, maxRepos, parallel, cacheMs, debug]);
 
   const formatCacheTime = (ms) => {
     const minutes = Math.floor(ms / (60 * 1000));
@@ -132,6 +134,18 @@ function App() {
               </label>
               <small>Process repositories in parallel for faster results</small>
             </div>
+
+            <div className="form-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={debug}
+                  onChange={(e) => setDebug(e.target.checked)}
+                />
+                Enable Debug Mode
+              </label>
+              <small>Show detailed console logging during repository scanning</small>
+            </div>
           </div>
 
           <button type="submit" disabled={loading || !username.trim()} className="submit-btn">
@@ -182,7 +196,7 @@ function App() {
                     </div>
                   </div>
                   
-                  {repo.thumbnail && repo.thumbnail !== './assets/default.png' && (
+                  {repo.thumbnail && (
                     <div className="repo-thumbnail">
                       <img src={repo.thumbnail} alt={repo.title || repo.name} />
                     </div>

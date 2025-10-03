@@ -19,7 +19,7 @@ This example demonstrates all features of the `portfolio-github-integration` lib
 
 1. **Basic Usage**: Fetch public repositories by username
 2. **Authentication**: Use GitHub tokens for private repos and higher rate limits
-3. **Advanced Options**: Configure max repositories, cache duration, and parallel processing
+3. **Advanced Options**: Configure max repositories, cache duration, parallel processing, and debug mode
 4. **Progress Callbacks**: Real-time updates during repository scanning
 5. **Result Display**: Show all returned metadata including:
    - Repository name and title
@@ -85,6 +85,7 @@ VanilaJS/
    - **Max Repositories**: Limit how many repos to scan (default: 100)
    - **Cache Duration**: How long to cache results (default: 20 minutes)
    - **Parallel Processing**: Enable for faster scanning (recommended)
+   - **Debug Mode**: Enable detailed console logging for development and troubleshooting
 
 4. **Click "Get Portfolio Repositories"** and watch the progress bar
 
