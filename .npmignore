@@ -30,6 +30,7 @@ coverage/
 # Examples and documentation
 examples/
 docs/
+PRIORITY_SYSTEM.md
 
 # Logs & temp files
 npm-debug.log*
@@ -66,3 +67,4 @@ assets/
 
 # Development scripts
 scripts/
+priority-analysis.js
