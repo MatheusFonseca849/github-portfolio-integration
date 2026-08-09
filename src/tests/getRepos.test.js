@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { getRepos } from '../../dist/index.js';
 
 // --- Mock Helpers ---

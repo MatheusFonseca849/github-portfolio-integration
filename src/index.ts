@@ -205,29 +205,29 @@ async function processSingleRepo(
   const priority = calculateRepoPriority(repo);
 
   // Check root directory first (preferred location)
-  const rootConfigRes = await fetchWithRateLimit(
-    `https://api.github.com/repos/${username}/${repo.name}/contents/repo.config.json`,
-    { headers },
-    priority
-  );
-
   let configRes: Response;
   let fromSrc = false;
 
-  if (rootConfigRes.ok) {
-    configRes = rootConfigRes;
-  } else {
-    // Fall back to src/ directory (deprecated)
-    const srcConfigRes = await fetchWithRateLimit(
-      `https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`,
+  try {
+    const rootConfigRes = await fetchWithRateLimit(
+      `https://api.github.com/repos/${username}/${repo.name}/contents/repo.config.json`,
       { headers },
       priority
     );
-
-    if (!srcConfigRes.ok) return null;
-
-    configRes = srcConfigRes;
-    fromSrc = true;
+    configRes = rootConfigRes;
+  } catch {
+    // Root config not found, fall back to src/ directory (deprecated)
+    try {
+      const srcConfigRes = await fetchWithRateLimit(
+        `https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`,
+        { headers },
+        priority
+      );
+      configRes = srcConfigRes;
+      fromSrc = true;
+    } catch {
+      return null; // No config in either location
+    }
   }
 
   const configData = await configRes.json() as GitHubFileContent;
