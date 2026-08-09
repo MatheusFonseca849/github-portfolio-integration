@@ -4,7 +4,9 @@ A browser-native TypeScript library that automatically fetches and aggregates po
 
 ## Overview
 
-This library scans a GitHub user's repositories for `repo.config.json` files in the `src/` directory and returns a comprehensive array of portfolio metadata for published projects.
+This library scans a GitHub user's repositories for `repo.config.json` files and returns a comprehensive array of portfolio metadata for published projects.
+
+> **Migration Notice:** Starting with the next major release (scheduled for **November 30, 2026**), this library will only search for `repo.config.json` in the **root directory** of each repository. The current version supports both root and `src/` locations for backward compatibility, but the `src/` location is deprecated. Please move your `repo.config.json` files to the project root before that date to avoid disruption.
 
 ## Installation
 
@@ -19,11 +21,8 @@ npm install portfolio-github-integration
 ```typescript
 import { getRepos } from 'portfolio-github-integration';
 
-// Simple usage (public repositories only)
+// Simple usage -- no token needed for public repositories
 const portfolioData = await getRepos('your-github-username');
-
-// With authentication token (backward compatible)
-const portfolioData = await getRepos('your-github-username', 'ghp_your_token_here');
 
 console.log(portfolioData);
 ```
@@ -35,7 +34,6 @@ import { getRepos } from 'portfolio-github-integration';
 
 // Performance-optimized configuration
 const portfolioData = await getRepos('your-github-username', {
-  token: 'ghp_your_token_here',        // GitHub Personal Access Token
   maxRepos: 50,                        // Limit repositories to scan (default: 100)
   parallel: true,                      // Enable parallel processing (default: true)
   cacheMs: 20 * 60 * 1000,            // Cache results for 20 minutes (default: 20 min)
@@ -64,9 +62,8 @@ function Portfolio() {
     async function fetchPortfolio() {
       try {
         const data = await getRepos('your-username', {
-          token: process.env.REACT_APP_GITHUB_TOKEN,
           maxRepos: 30,
-          debug: false,                    // Disable debug logs in production
+          debug: false,
           onProgress: (current, total, repoName) => {
             setProgress({ current, total });
           }
@@ -106,13 +103,15 @@ function Portfolio() {
 
 ## How It Works
 
-1. **Repository Setup**: Add a `repo.config.json` file to the `src/` directory of repositories you want to include in your portfolio
-2. **Library Scan**: The library fetches all your repositories and checks for the configuration file
+1. **Repository Setup**: Add a `repo.config.json` file to the root directory of repositories you want to include in your portfolio
+2. **Library Scan**: The library fetches all your repositories and checks for the configuration file (root first, then `src/` as a deprecated fallback)
 3. **Metadata Extraction**: Returns an array of metadata for all repositories with `published: true` in their config
 
 ## Configuration File Format
 
-Create a `src/repo.config.json` file in each repository you want to include:
+Create a `repo.config.json` file in the **root directory** of each repository you want to include:
+
+> **Note:** Previously, this file was placed in `src/repo.config.json`. That location is still supported but deprecated. Please migrate your config files to the project root.
 
 ```json
 {
@@ -134,13 +133,13 @@ Create a `src/repo.config.json` file in each repository you want to include:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `published` | boolean | ✅ | Whether to include this repo in portfolio results |
-| `title` | string | ❌ | Display title for the project |
-| `info` | string | ❌ | Project description |
-| `publicUrl` | string | ❌ | Public URL of the deployed project (e.g., Vercel/Netlify) |
-| `thumbnail` | string | ❌ | Path to thumbnail image (relative to repo root) |
-| `branch` | string | ❌ | Branch to use for thumbnail URL (defaults to "main") |
-| `customConfig` | object | ❌ | Custom configuration object for additional metadata |
+| `published` | boolean | Yes | Whether to include this repo in portfolio results |
+| `title` | string | No | Display title for the project |
+| `info` | string | No | Project description |
+| `publicUrl` | string | No | Public URL of the deployed project (e.g., Vercel/Netlify) |
+| `thumbnail` | string | No | Path to thumbnail image (relative to repo root) |
+| `branch` | string | No | Branch to use for thumbnail URL (defaults to "main") |
+| `customConfig` | object | No | Custom configuration object for additional metadata |
 
 ## Return Format
 
@@ -154,7 +153,7 @@ interface RepoMetadata {
   thumbnail?: string;     // Full URL to thumbnail image (optional)
   info: string;           // Project description
   title: string;          // Project title
-  customConfig?: Object;  // Optional custom configuration object
+  customConfig?: Record<string, unknown>;  // Optional custom configuration object
 }
 ```
 
@@ -191,7 +190,7 @@ interface RepoMetadata {
 ]
 ```
 
-## 🔧 API Reference
+## API Reference
 
 ### `getRepos(username, options?)`
 
@@ -206,7 +205,7 @@ interface RepoMetadata {
 
 ```typescript
 interface GetReposOptions {
-  token?: string;           // GitHub Personal Access Token
+  token?: string;           // GitHub Personal Access Token (server-side only)
   maxRepos?: number;        // Max repositories to scan (default: 100)
   parallel?: boolean;       // Enable parallel processing (default: true)
   cacheMs?: number;         // Cache duration in ms (default: 1200000 = 20 min)
@@ -227,33 +226,39 @@ interface RepoMetadata {
   thumbnail?: string;     // Full URL to thumbnail image (optional)
   info: string;           // Project description
   title: string;          // Project title
-  customConfig?: any;     // Custom configuration object
+  customConfig?: Record<string, unknown>;  // Custom configuration object
 }
 ```
 
-## 🔐 Authentication
+## Authentication & Token Safety
 
-For private repositories and higher rate limits, you'll need a GitHub Personal Access Token:
+For most portfolio sites displaying **public repositories, no token is needed**. The GitHub API allows unauthenticated access for public data, and the library's built-in caching (20-minute TTL) ensures you stay well within the 60 requests/hour unauthenticated limit for typical portfolio traffic.
 
-1. Go to **GitHub Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
-2. Click **Generate new token (classic)**
-3. Select scopes:
-   - `public_repo` (for public repositories)
-   - `repo` (for private repositories)
-4. Copy the generated token
-5. Use it in your code:
+> **Never ship a GitHub token in client-side code.** Tokens embedded in browser bundles are visible to anyone who inspects the page. If your portfolio only displays public repos, simply omit the token.
+
+### When you need a token
+
+A token is only necessary if you:
+- Need to display **private repositories** on your portfolio
+- Have a **very high-traffic** site that exceeds the unauthenticated rate limit
+
+### Safe token usage (server-side / build-time only)
+
+If you deploy with a framework that supports server-side rendering or static site generation (Next.js, Nuxt, Astro, etc.), you can safely use a token at **build time** -- it never reaches the browser:
 
 ```typescript
-// Environment variable (recommended)
+// In a Next.js getStaticProps, Astro frontmatter, or build script:
 const repos = await getRepos('username', {
-  token: process.env.GITHUB_TOKEN
-});
-
-// Direct usage (not recommended for production)
-const repos = await getRepos('username', {
-  token: 'ghp_your_token_here'
+  token: process.env.GITHUB_TOKEN  // Only available at build time
 });
 ```
+
+### Generating a token (if needed)
+
+1. Go to **GitHub Settings** > **Developer settings** > **Personal access tokens** > **Fine-grained tokens**
+2. Click **Generate new token**
+3. Select only the **Public Repositories (read-only)** permission (or **Contents: read** for private repos)
+4. Store the token in your deployment platform's environment variables -- never commit it to source code
 
 ### Rate Limits
 
@@ -262,7 +267,9 @@ const repos = await getRepos('username', {
 | No token | 60 requests |
 | With token | 5,000 requests |
 
-## 🐛 Debug Mode
+For context: a portfolio site with 20 repos to scan and the default 20-minute cache will only hit GitHub ~3 times per hour per unique visitor session. The unauthenticated limit is more than sufficient for the vast majority of use cases.
+
+## Debug Mode
 
 Enable debug mode to see detailed console logging during repository scanning:
 
@@ -285,28 +292,24 @@ const repos = await getRepos('username', {
 The library gracefully handles:
 - Repositories without configuration files (skipped silently)
 - Invalid JSON in configuration files (skipped with warning in debug mode)
+- Malformed config schemas (skipped -- only valid objects with proper field types are accepted)
 - Network errors (logged in debug mode and skipped)
-- Missing thumbnails (no fallback - thumbnail property will be undefined)
+- Missing thumbnails (no fallback -- thumbnail property will be undefined)
 
 ## Development
 
 ### Testing
 
-The library includes comprehensive Jest tests covering:
+The library includes comprehensive Jest tests with mocked fetch calls (no network dependency):
 - Input validation
-- API integration
-- Error handling
-- Return value structure validation
+- Fetch and filter logic
+- Schema validation
+- Options and backward compatibility
+- Return value structure
 
 ```bash
-# Run tests (uses 'octocat' as default test user)
+# Run tests
 npm test
-
-# Run tests with your own GitHub username
-TEST_GITHUB_USERNAME=yourusername npm test
-
-# Or use the custom test script
-npm run test:custom --user=yourusername
 
 # Run tests in watch mode
 npm run test:watch
@@ -324,46 +327,44 @@ This library is built as a **browser-first ES Module** and includes:
 - Full TypeScript support with declaration files
 - Jest testing with ES Module compatibility
 - Native fetch API integration (works in all modern browsers)
-- **Zero external dependencies** - completely self-contained
-- **Enterprise-grade browser-native rate limiting**
-- **Framework agnostic** - works with React, Vue, Angular, or vanilla JS
+- **Zero external dependencies** -- completely self-contained
+- **Browser-native rate limiting** with priority queuing
+- **Framework agnostic** -- works with React, Vue, Angular, or vanilla JS
 - Proper error handling and input validation
 
-## 🚀 Performance & Rate Limiting
+## Performance & Rate Limiting
 
-This library is built for **maximum performance** with enterprise-grade optimizations:
+This library is optimized for fast, reliable portfolio loading:
 
-### ⚡ Performance Features
+### Performance Features
 - **Parallel Processing**: Scans multiple repositories simultaneously (3-5x faster than sequential)
 - **Smart Filtering**: Automatically skips forks, archived repos, and unlikely candidates
 - **Repository Limiting**: Configurable limit (default: 100 most recent repos)
 - **In-Memory Caching**: Results cached for 20 minutes by default (configurable)
 - **Progress Callbacks**: Real-time progress updates for better UX
-- **Early Termination**: Stops scanning when sufficient results are found
 
-### 🔄 Rate Limiting System
+### Rate Limiting System
 - **Intelligent Queuing**: Priority-based request scheduling
 - **Concurrent Control**: Up to 6 simultaneous requests (optimized for GitHub API)
 - **Adaptive Timing**: 50ms minimum interval between requests (1,200 req/min max)
 - **Exponential Backoff**: Smart retry logic for failed requests
 - **Rate Limit Detection**: Automatic GitHub rate limit handling with proper wait times
-- **Request Prioritization**: Critical API calls get higher priority
+- **Request Prioritization**: Recently-updated repos are fetched first
 
-### 📊 Performance Benchmarks
+### Performance Benchmarks
 | Scenario | Before Optimization | After Optimization | Improvement |
 |----------|-------------------|-------------------|-------------|
 | 50 repositories | ~15-30 seconds | ~3-5 seconds | **5-6x faster** |
 | 100 repositories | ~30-60 seconds | ~5-8 seconds | **6-8x faster** |
 | Cached results | N/A | ~50ms | **Instant** |
-| With authentication | Same as above | Same + private repos | **Enhanced access** |
 
-### 🌐 Browser-First Architecture
-- **Zero Node.js dependencies** - completely browser-native
-- **Native fetch API** - no external HTTP libraries
-- **ES Modules** - modern JavaScript module system
-- **TypeScript support** - full type safety and IntelliSense
-- **Framework agnostic** - works with React, Vue, Angular, Svelte, or vanilla JS
-- **Lightweight bundle** - minimal footprint for fast loading
+### Browser-First Architecture
+- **Zero Node.js dependencies** -- completely browser-native
+- **Native fetch API** -- no external HTTP libraries
+- **ES Modules** -- modern JavaScript module system
+- **TypeScript support** -- full type safety and IntelliSense
+- **Framework agnostic** -- works with React, Vue, Angular, Svelte, or vanilla JS
+- **Lightweight bundle** -- minimal footprint for fast loading
 
 ## Requirements
 
@@ -372,15 +373,15 @@ This library is built for **maximum performance** with enterprise-grade optimiza
 - **Module System**: ES Modules support required
 - **TypeScript**: 5.0+ (for development only)
 
-## 📚 Examples & Documentation
+## Examples & Documentation
 
 ### Live Examples
 
 We provide comprehensive example applications demonstrating all library features:
 
-- **[React Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/React/github-integration-example)** - Complete React app with Create React App
-- **[Vue.js Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/Vue/github-integration-example)** - Modern Vue 3 app with Composition API and Vite
-- **[Vanilla JavaScript Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/VanilaJS)** - Pure HTML/CSS/JS with no build tools required
+- **[React Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/React/github-integration-example)** -- Complete React app with Create React App
+- **[Vue.js Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/Vue/github-integration-example)** -- Modern Vue 3 app with Composition API and Vite
+- **[Vanilla JavaScript Example](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples/VanillaJS)** -- Pure HTML/CSS/JS with no build tools required
 
 All examples include:
 - Interactive configuration forms for all library options
@@ -396,11 +397,11 @@ All example applications are available in the GitHub repository. Each example in
 
 - **React Example**: Full-featured React application with comprehensive documentation
 - **Vue.js Example**: Modern Vue 3 implementation using Composition API and Vite
-- **Vanilla JavaScript Example**: Two versions available - CDN version (no setup required) and local version
+- **Vanilla JavaScript Example**: Two versions available -- CDN version (no setup required) and local version
 
 Visit the [GitHub repository](https://github.com/MatheusFonseca849/github-portfolio-integration) to explore the complete example implementations.
 
-## 🐛 Issues & Support
+## Issues & Support
 
 ### Repository
 
@@ -420,15 +421,15 @@ If you encounter any bugs, issues, or have feature requests, please submit them 
    - Browser and operating system details
    - Any error messages or console logs
 
-**[Submit an Issue →](https://github.com/MatheusFonseca849/github-portfolio-integration/issues/new)**
+**[Submit an Issue](https://github.com/MatheusFonseca849/github-portfolio-integration/issues/new)**
 
 ### Getting Help
 
-- 📖 **Documentation**: This README contains comprehensive usage instructions
-- 💡 **Examples**: Check the example applications in the [GitHub repository](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples)
-- 🐛 **Bug Reports**: Use GitHub Issues for bug reports and feature requests
-- 💬 **Questions**: GitHub Discussions for general questions and community support
+- **Documentation**: This README contains comprehensive usage instructions
+- **Examples**: Check the example applications in the [GitHub repository](https://github.com/MatheusFonseca849/github-portfolio-integration/tree/main/examples)
+- **Bug Reports**: Use GitHub Issues for bug reports and feature requests
+- **Questions**: GitHub Discussions for general questions and community support
 
 ## License
 
-MIT © Matheus Fonseca
+MIT (c) Matheus Fonseca

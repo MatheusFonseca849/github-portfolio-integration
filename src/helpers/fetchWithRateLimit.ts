@@ -13,10 +13,27 @@ export const PRIORITY = {
   DEFAULT: 0        // Default priority
 } as const;
 
+interface GitHubRepo {
+  updated_at?: string;
+  name: string;
+}
+
+interface QueueItem<T> {
+  fn: () => Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: Error) => void;
+  priority: number;
+}
+
+interface RateLimitError extends Error {
+  status?: number;
+  waitTime?: number;
+}
+
 /**
  * Calculate priority for a repository based on its last update time
  */
-export function calculateRepoPriority(repo: any): number {
+export function calculateRepoPriority(repo: GitHubRepo): number {
   if (!repo.updated_at) return PRIORITY.LOW;
   
   const daysSinceUpdate = (Date.now() - new Date(repo.updated_at).getTime()) / (1000 * 60 * 60 * 24);
@@ -25,13 +42,9 @@ export function calculateRepoPriority(repo: any): number {
   if (daysSinceUpdate < 180) return PRIORITY.MEDIUM;   // Moderately recent
   return PRIORITY.LOW;                                  // Older repos
 }
+
 class GitHubRateLimiter {
-  private queue: Array<{
-    fn: () => Promise<any>;
-    resolve: (value: any) => void;
-    reject: (error: any) => void;
-    priority: number;
-  }> = [];
+  private queue: QueueItem<Response>[] = [];
   
   private processing = false;
   private lastRequestTime = 0;
@@ -49,8 +62,8 @@ class GitHubRateLimiter {
   /**
    * Schedule a request with priority support
    */
-  async schedule<T>(fn: () => Promise<T>, priority: number = 0): Promise<T> {
-    return new Promise((resolve, reject) => {
+  async schedule(fn: () => Promise<Response>, priority: number = 0): Promise<Response> {
+    return new Promise<Response>((resolve, reject) => {
       this.queue.push({ fn, resolve, reject, priority });
       // Sort by priority (higher priority first)
       this.queue.sort((a, b) => b.priority - a.priority);
@@ -99,7 +112,7 @@ class GitHubRateLimiter {
   /**
    * Execute request with retry logic and error handling
    */
-  private async executeRequest(item: any): Promise<void> {
+  private async executeRequest(item: QueueItem<Response>): Promise<void> {
     let retryCount = 0;
     
     const attemptRequest = async (): Promise<void> => {
@@ -108,11 +121,12 @@ class GitHubRateLimiter {
         this.activeRequests--;
         item.resolve(result);
         this.processQueue(); // Continue processing
-      } catch (error: any) {
+      } catch (error: unknown) {
         retryCount++;
+        const rateLimitError = error as RateLimitError;
         
         // Check if we should retry
-        if (retryCount <= this.config.maxRetries && this.shouldRetry(error)) {
+        if (retryCount <= this.config.maxRetries && this.shouldRetry(rateLimitError)) {
           const backoffTime = Math.min(
             this.config.backoffMultiplier ** retryCount * 1000,
             this.config.maxBackoffTime
@@ -123,7 +137,7 @@ class GitHubRateLimiter {
           setTimeout(() => attemptRequest(), backoffTime);
         } else {
           this.activeRequests--;
-          item.reject(error);
+          item.reject(rateLimitError);
           this.processQueue(); // Continue processing
         }
       }
@@ -135,7 +149,7 @@ class GitHubRateLimiter {
   /**
    * Determine if an error is retryable
    */
-  private shouldRetry(error: any): boolean {
+  private shouldRetry(error: RateLimitError): boolean {
     // Retry on network errors, rate limits, and server errors
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
       return true; // Network error
@@ -170,7 +184,7 @@ const rateLimiter = new GitHubRateLimiter();
  */
 async function fetchWithRateLimit(
   url: string,
-  options: any,
+  options: RequestInit,
   priority: number = 0
 ): Promise<Response> {
   return rateLimiter.schedule(async () => {
@@ -185,16 +199,16 @@ async function fetchWithRateLimit(
       const resetTime = reset ? parseInt(reset) * 1000 : Date.now() + 60000;
       const waitTime = Math.max(resetTime - Date.now(), 0);
       
-      const error = new Error(`GitHub API rate limit exceeded. Reset at ${new Date(resetTime).toISOString()}`);
-      (error as any).status = 403;
-      (error as any).waitTime = waitTime;
+      const error: RateLimitError = new Error(`GitHub API rate limit exceeded. Reset at ${new Date(resetTime).toISOString()}`);
+      error.status = 403;
+      error.waitTime = waitTime;
       throw error;
     }
 
     // Handle other HTTP errors
     if (!res.ok) {
-      const error = new Error(`HTTP ${res.status}: ${res.statusText}`);
-      (error as any).status = res.status;
+      const error: RateLimitError = new Error(`HTTP ${res.status}: ${res.statusText}`);
+      error.status = res.status;
       throw error;
     }
 

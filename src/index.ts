@@ -1,10 +1,58 @@
 // Use native fetch API (available in browsers and Node.js 18+)
-import RepoMetadata from "./interfaces/IrepoMetadata.js";
-import GitHubFileContent from "./interfaces/IgithubFileContent.js";
+import RepoMetadata from "./interfaces/RepoMetadata.js";
+import GitHubFileContent from "./interfaces/GitHubFileContent.js";
 import fetchWithRateLimit, { PRIORITY, calculateRepoPriority } from "./helpers/fetchWithRateLimit.js";
-import GetReposOptions from "./interfaces/IgetReposOptions.js";
+import GetReposOptions from "./interfaces/GetReposOptions.js";
 import { getFromCache } from "./helpers/getFromCache.js";
 import { cache } from "./helpers/getFromCache.js";
+
+/** Shape of a repository returned by the GitHub API */
+interface GitHubRepo {
+  name: string;
+  html_url: string;
+  fork: boolean;
+  archived: boolean;
+  updated_at?: string;
+}
+
+/** Shape of a parsed repo.config.json */
+interface RepoConfig {
+  published?: boolean;
+  title?: string;
+  info?: string;
+  publicUrl?: string;
+  thumbnail?: string;
+  branch?: string;
+  customConfig?: Record<string, unknown>;
+}
+
+/**
+ * Validate that a parsed config object has the expected shape.
+ * Returns the validated config or null if invalid.
+ */
+function validateRepoConfig(parsed: unknown): RepoConfig | null {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  // `published` must be a boolean if present
+  if ('published' in obj && typeof obj.published !== 'boolean') return null;
+
+  // String fields must be strings if present
+  const stringFields = ['title', 'info', 'publicUrl', 'thumbnail', 'branch'] as const;
+  for (const field of stringFields) {
+    if (field in obj && typeof obj[field] !== 'string') return null;
+  }
+
+  // `customConfig` must be a plain object if present
+  if ('customConfig' in obj && (typeof obj.customConfig !== 'object' || obj.customConfig === null || Array.isArray(obj.customConfig))) {
+    return null;
+  }
+
+  return obj as unknown as RepoConfig;
+}
 
 /**
  * Store data in cache
@@ -56,7 +104,7 @@ export async function getRepos(
     return cached;
   }
 
-  const headers: { [key: string]: string } = {
+  const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
   };
   if (config.token) headers.Authorization = `token ${config.token}`;
@@ -67,14 +115,14 @@ export async function getRepos(
     { headers },
     PRIORITY.CRITICAL
   );
-  const allRepos = await reposRes.json() as any[];
+  const allRepos = await reposRes.json() as GitHubRepo[];
 
   // Filter and limit repositories for better performance
   const repos = allRepos
     .filter(repo => !repo.fork && !repo.archived) // Skip forks and archived repos
     .slice(0, config.maxRepos || 100); // Limit number of repos to check
 
-  config.debug && console.log(`🔍 Scanning ${repos.length} repositories for portfolio configs...`);
+  config.debug && console.log(`[portfolio-github-integration] Scanning ${repos.length} repositories for portfolio configs...`);
 
   let portfolioRepos: RepoMetadata[];
 
@@ -89,7 +137,7 @@ export async function getRepos(
   // Cache the results
   setCache(cacheKey, portfolioRepos);
 
-  config.debug && console.log(`✅ Found ${portfolioRepos.length} published repositories`);
+  config.debug && console.log(`[portfolio-github-integration] Found ${portfolioRepos.length} published repositories`);
   return portfolioRepos;
 }
 
@@ -97,9 +145,9 @@ export async function getRepos(
  * Process repositories in parallel for maximum performance
  */
 async function processReposParallel(
-  repos: any[],
+  repos: GitHubRepo[],
   username: string,
-  headers: any,
+  headers: Record<string, string>,
   config: GetReposOptions
 ): Promise<RepoMetadata[]> {
   const results: (RepoMetadata | null)[] = await Promise.all(
@@ -108,7 +156,7 @@ async function processReposParallel(
         config.onProgress?.(index + 1, repos.length, repo.name);
         return await processSingleRepo(repo, username, headers);
       } catch (err) {
-        config.debug && console.warn(`⚠️ Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        config.debug && console.warn(`[portfolio-github-integration] Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         return null;
       }
     })
@@ -121,9 +169,9 @@ async function processReposParallel(
  * Process repositories sequentially (fallback method)
  */
 async function processReposSequential(
-  repos: any[],
+  repos: GitHubRepo[],
   username: string,
-  headers: any,
+  headers: Record<string, string>,
   config: GetReposOptions
 ): Promise<RepoMetadata[]> {
   const portfolioRepos: RepoMetadata[] = [];
@@ -137,7 +185,7 @@ async function processReposSequential(
         portfolioRepos.push(result);
       }
     } catch (err) {
-     config.debug && console.warn(`⚠️ Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      config.debug && console.warn(`[portfolio-github-integration] Skipping ${repo.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   }
 
@@ -145,23 +193,42 @@ async function processReposSequential(
 }
 
 /**
- * Process a single repository to check for portfolio config
+ * Process a single repository to check for portfolio config.
+ * Checks root directory first, then falls back to src/ (deprecated location).
  */
 async function processSingleRepo(
-  repo: any,
+  repo: GitHubRepo,
   username: string,
-  headers: any
+  headers: Record<string, string>
 ): Promise<RepoMetadata | null> {
   // Calculate priority based on repo freshness
   const priority = calculateRepoPriority(repo);
 
-  const configRes = await fetchWithRateLimit(
-    `https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`,
+  // Check root directory first (preferred location)
+  const rootConfigRes = await fetchWithRateLimit(
+    `https://api.github.com/repos/${username}/${repo.name}/contents/repo.config.json`,
     { headers },
     priority
   );
 
-  if (!configRes.ok) return null;
+  let configRes: Response;
+  let fromSrc = false;
+
+  if (rootConfigRes.ok) {
+    configRes = rootConfigRes;
+  } else {
+    // Fall back to src/ directory (deprecated)
+    const srcConfigRes = await fetchWithRateLimit(
+      `https://api.github.com/repos/${username}/${repo.name}/contents/src/repo.config.json`,
+      { headers },
+      priority
+    );
+
+    if (!srcConfigRes.ok) return null;
+
+    configRes = srcConfigRes;
+    fromSrc = true;
+  }
 
   const configData = await configRes.json() as GitHubFileContent;
 
@@ -172,11 +239,25 @@ async function processSingleRepo(
     ? Buffer.from(contentBase64, "base64").toString("utf-8")
     : atob(contentBase64);
 
-  const repoConfig = JSON.parse(contentString);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contentString);
+  } catch {
+    return null; // Invalid JSON in config file
+  }
 
-  if (!repoConfig.published) return null;
+  const repoConfig = validateRepoConfig(parsed);
+  if (!repoConfig || !repoConfig.published) return null;
 
-  let results: RepoMetadata = {
+  // Emit deprecation warning if config was found in src/
+  if (fromSrc) {
+    console.warn(
+      `[portfolio-github-integration] DEPRECATION WARNING: "${repo.name}" has repo.config.json in src/. ` +
+      `Please move it to the project root. The src/ location will stop being supported after November 30, 2026.`
+    );
+  }
+
+  const results: RepoMetadata = {
     name: repo.name,
     url: repo.html_url,
     publicUrl: repoConfig.publicUrl || "",

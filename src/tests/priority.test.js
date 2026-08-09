@@ -29,7 +29,7 @@ describe('Priority System', () => {
     test('should return HIGH priority for recently updated repo (< 30 days)', () => {
       const repo = {
         name: 'recent-repo',
-        updated_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString() // 15 days ago
+        updated_at: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
       };
       expect(calculateRepoPriority(repo)).toBe(PRIORITY.HIGH);
     });
@@ -37,7 +37,7 @@ describe('Priority System', () => {
     test('should return MEDIUM priority for moderately recent repo (30-180 days)', () => {
       const repo = {
         name: 'medium-repo',
-        updated_at: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString() // 90 days ago
+        updated_at: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
       };
       expect(calculateRepoPriority(repo)).toBe(PRIORITY.MEDIUM);
     });
@@ -45,7 +45,7 @@ describe('Priority System', () => {
     test('should return LOW priority for old repo (> 180 days)', () => {
       const repo = {
         name: 'old-repo',
-        updated_at: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString() // 1 year ago
+        updated_at: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
       };
       expect(calculateRepoPriority(repo)).toBe(PRIORITY.LOW);
     });

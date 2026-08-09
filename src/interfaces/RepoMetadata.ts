@@ -1,10 +1,11 @@
 interface RepoMetadata {
     name: string;
     url: string;
-    thumbnail: string;
+    publicUrl?: string;
+    thumbnail?: string | null;
     info: string;
     title: string;
-    customConfig?: Object;
+    customConfig?: Record<string, unknown>;
 }
+
 export default RepoMetadata;
-//# sourceMappingURL=repoMetadata.d.ts.map

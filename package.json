@@ -13,9 +13,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "npm run build && node --experimental-vm-modules node_modules/.bin/jest --verbose",
-    "test:watch": "npm run build && jest --watch",
-    "test:custom": "npm run build && TEST_GITHUB_USERNAME=$npm_config_user node --experimental-vm-modules node_modules/.bin/jest --verbose"
+    "test": "npm run build && npx --node-options=--experimental-vm-modules jest --verbose",
+    "test:watch": "npm run build && npx --node-options=--experimental-vm-modules jest --watch",
+    "test:custom": "npm run build && npx --node-options=--experimental-vm-modules jest --verbose"
   },
   "files": [
     "dist/**/*",
