@@ -1,0 +1,12 @@
+{
+  "published": true,
+  "title": "Portfolio-Github Integration",
+  "info": "Custom, browser-native, dependency-free library designed to streamline integration of selected projects with a developer's portfolio.",
+  "branch": "main",
+  "customConfig": {
+    "tags": ["typescript", "node",  "npm", "library"],
+    "featured": true,
+    "difficulty": "intermediate",
+    "infoPT": "Biblioteca personalizada, browser-native, livre de dependências externas, criada para facilitar a integração de projetos selecionados ao portfólio de um desenvolvedor."
+  }
+}
