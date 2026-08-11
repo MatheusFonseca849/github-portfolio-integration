@@ -7,7 +7,7 @@ const username = ref('')
 const token = ref('')
 const maxRepos = ref(100)
 const parallel = ref(true)
-const cacheMs = ref(20 * 60 * 1000) // 20 minutes
+const cacheMs = ref(60 * 60 * 1000) // 60 minutes
 const debug = ref(false)
 const loading = ref(false)
 const repos = ref([])
@@ -53,7 +53,7 @@ const handleSubmit = async () => {
       ...(token.value.trim() && { token: token.value.trim() }),
       maxRepos: parseInt(maxRepos.value) || 100,
       parallel: parallel.value,
-      cacheMs: parseInt(cacheMs.value) || 20 * 60 * 1000,
+      cacheMs: parseInt(cacheMs.value) || 60 * 60 * 1000,
       debug: debug.value,
       onProgress: (current, total, repoName) => {
         progress.value = { current, total, repoName }
@@ -224,10 +224,10 @@ const handleSubmit = async () => {
 
       <div v-if="!loading && repos.length === 0 && username && !error" class="no-results">
         <h3>No Portfolio Repositories Found</h3>
-        <p>No repositories with <code>src/repo.config.json</code> files containing <code>"published": true</code> were found.</p>
+        <p>No repositories with <code>repo.config.json</code> files containing <code>"published": true</code> were found.</p>
         <p>To test this library:</p>
         <ol>
-          <li>Create a <code>src/repo.config.json</code> file in one of your repositories</li>
+          <li>Create a <code>repo.config.json</code> file in the root of one of your repositories</li>
           <li>Add the following content:</li>
         </ol>
         <pre class="config-example">{{`{

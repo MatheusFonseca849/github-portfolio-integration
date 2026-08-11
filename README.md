@@ -36,7 +36,7 @@ import { getRepos } from 'portfolio-github-integration';
 const portfolioData = await getRepos('your-github-username', {
   maxRepos: 50,                        // Limit repositories to scan (default: 100)
   parallel: true,                      // Enable parallel processing (default: true)
-  cacheMs: 20 * 60 * 1000,            // Cache results for 20 minutes (default: 20 min)
+  cacheMs: 60 * 60 * 1000,            // Cache results for 60 minutes (default: 60 min)
   debug: true,                         // Enable debug console logging (default: false)
   onProgress: (processed, total, repoName) => {
     console.log(`Progress: ${processed}/${total} - Scanning ${repoName}`);
@@ -208,8 +208,9 @@ interface GetReposOptions {
   token?: string;           // GitHub Personal Access Token (server-side only)
   maxRepos?: number;        // Max repositories to scan (default: 100)
   parallel?: boolean;       // Enable parallel processing (default: true)
-  cacheMs?: number;         // Cache duration in ms (default: 1200000 = 20 min)
+  cacheMs?: number;         // Cache duration in ms (default: 3600000 = 60 min)
   debug?: boolean;          // Enable debug console logging (default: false)
+  requestBudget?: number;   // Max API requests per call (default: 55 unauth, 500 auth)
   onProgress?: (processed: number, total: number, repoName: string) => void;
 }
 ```
@@ -267,7 +268,23 @@ const repos = await getRepos('username', {
 | No token | 60 requests |
 | With token | 5,000 requests |
 
-For context: a portfolio site with 20 repos to scan and the default 20-minute cache will only hit GitHub ~3 times per hour per unique visitor session. The unauthenticated limit is more than sufficient for the vast majority of use cases.
+For context: a portfolio site with 20 repos to scan and the default 60-minute cache will only hit GitHub once per hour per unique visitor session. The unauthenticated limit is more than sufficient for the vast majority of use cases.
+
+### Cache Management
+
+Results are cached in memory for 60 minutes by default. You can manually invalidate the cache when needed:
+
+```typescript
+import { clearCache } from 'portfolio-github-integration';
+
+// Clear all cached data
+clearCache();
+
+// Clear cache for a specific user only
+clearCache('your-github-username');
+```
+
+This is useful after deploying a new `repo.config.json` to force a fresh fetch.
 
 ## Debug Mode
 
@@ -295,6 +312,9 @@ The library gracefully handles:
 - Malformed config schemas (skipped -- only valid objects with proper field types are accepted)
 - Network errors (logged in debug mode and skipped)
 - Missing thumbnails (no fallback -- thumbnail property will be undefined)
+- **Rate limit exceeded (403)**: Immediately aborts remaining requests and returns repos processed so far
+- **Abuse detection (429)**: Aborts all requests to prevent further blocking
+- **Request budget exceeded**: Stops processing and returns partial results with a console warning
 
 ## Development
 
@@ -302,10 +322,13 @@ The library gracefully handles:
 
 The library includes comprehensive Jest tests with mocked fetch calls (no network dependency):
 - Input validation
+- Config file location (Trees API)
 - Fetch and filter logic
 - Schema validation
 - Options and backward compatibility
 - Return value structure
+- Rate limit guardrails (abort on 403, partial results)
+- Cache management (`clearCache`)
 
 ```bash
 # Run tests
@@ -340,15 +363,17 @@ This library is optimized for fast, reliable portfolio loading:
 - **Parallel Processing**: Scans multiple repositories simultaneously (3-5x faster than sequential)
 - **Smart Filtering**: Automatically skips forks, archived repos, and unlikely candidates
 - **Repository Limiting**: Configurable limit (default: 100 most recent repos)
-- **In-Memory Caching**: Results cached for 20 minutes by default (configurable)
+- **In-Memory Caching**: Results cached for 60 minutes by default (configurable via `cacheMs`)
 - **Progress Callbacks**: Real-time progress updates for better UX
 
 ### Rate Limiting System
 - **Intelligent Queuing**: Priority-based request scheduling
-- **Concurrent Control**: Up to 6 simultaneous requests (optimized for GitHub API)
-- **Adaptive Timing**: 50ms minimum interval between requests (1,200 req/min max)
-- **Exponential Backoff**: Smart retry logic for failed requests
-- **Rate Limit Detection**: Automatic GitHub rate limit handling with proper wait times
+- **Auth-Aware Concurrency**: 6 concurrent requests (authenticated) or 2 (unauthenticated) to avoid abuse detection
+- **Adaptive Timing**: 50ms (authenticated) or 200ms (unauthenticated) minimum interval between requests
+- **Abort-on-Rate-Limit**: Immediately cancels all queued requests when a 403/429 is received (no retry cascade)
+- **Request Budget**: Configurable cap on total API requests per call (default: 55 unauthenticated, 500 authenticated)
+- **Partial Results**: Returns repos processed so far when rate-limited mid-scan
+- **Git Trees API**: Uses a single tree request per repo to check for config files, reducing total requests by ~45%
 - **Request Prioritization**: Recently-updated repos are fetched first
 
 ### Performance Benchmarks

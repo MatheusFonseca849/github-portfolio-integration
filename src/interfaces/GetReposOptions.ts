@@ -7,10 +7,12 @@ interface GetReposOptions {
     parallel?: boolean;
     /** Progress callback function */
     onProgress?: (processed: number, total: number, repoName: string) => void;
-    /** Cache results for this many milliseconds (default: 20 minutes) */
+    /** Cache results for this many milliseconds (default: 60 minutes) */
     cacheMs?: number;
     /** Enable debug mode (default: false) */
     debug?: boolean;
+    /** Maximum number of API requests per getRepos() call (default: 55 unauthenticated, 500 authenticated) */
+    requestBudget?: number;
   }
 
   export default GetReposOptions

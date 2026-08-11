@@ -191,7 +191,7 @@ async function handleSubmit(event) {
     const options = {
       maxRepos: parseInt(maxReposInput.value) || 100,
       parallel: parallelInput.checked,
-      cacheMs: (parseInt(cacheMsInput.value) || 20) * 60 * 1000,
+      cacheMs: (parseInt(cacheMsInput.value) || 60) * 60 * 1000,
       debug: debugInput.checked,
       onProgress: updateProgress
     };

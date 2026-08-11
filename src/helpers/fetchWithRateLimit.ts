@@ -1,6 +1,6 @@
 /**
  * Production-ready browser rate limiter for GitHub API
- * Implements sophisticated queuing, concurrency control, and retry logic
+ * Implements queuing, concurrency control, abort-on-rate-limit, and request budgeting
  */
 
 // Priority constants for different types of requests
@@ -25,9 +25,15 @@ interface QueueItem<T> {
   priority: number;
 }
 
-interface RateLimitError extends Error {
+export interface RateLimitError extends Error {
   status?: number;
   waitTime?: number;
+  isRateLimit?: boolean;
+}
+
+export interface RateLimiterConfig {
+  authenticated: boolean;
+  requestBudget?: number;
 }
 
 /**
@@ -49,20 +55,77 @@ class GitHubRateLimiter {
   private processing = false;
   private lastRequestTime = 0;
   private activeRequests = 0;
+  private requestCount = 0;
+  private aborted = false;
+  private abortReason: string | null = null;
   
-  // Configuration optimized for GitHub API performance
-  private readonly config = {
+  // Configuration — adjusted per-session via configure()
+  private config = {
     minInterval: 50,         // 50ms between requests (1200 req/min max)
-    maxConcurrent: 6,        // More aggressive concurrent requests
-    maxRetries: 3,           // Retry failed requests
+    maxConcurrent: 6,        // Concurrent requests
+    maxRetries: 2,           // Retry failed requests (only for server errors)
     backoffMultiplier: 2,    // Exponential backoff
-    maxBackoffTime: 30000,   // Max 30s backoff
+    maxBackoffTime: 10000,   // Max 10s backoff
+    requestBudget: 55,       // Max requests per session (unauthenticated default)
   };
+
+  /**
+   * Configure the rate limiter for a new session.
+   * Call this before starting a batch of requests.
+   */
+  configure(options: RateLimiterConfig): void {
+    this.requestCount = 0;
+    this.aborted = false;
+    this.abortReason = null;
+
+    if (options.authenticated) {
+      this.config.maxConcurrent = 6;
+      this.config.minInterval = 50;
+      this.config.requestBudget = options.requestBudget || 500;
+    } else {
+      // Conservative settings for unauthenticated requests
+      this.config.maxConcurrent = 2;
+      this.config.minInterval = 200;
+      this.config.requestBudget = options.requestBudget || 55;
+    }
+  }
+
+  /**
+   * Abort all pending requests immediately.
+   * Active in-flight requests will complete but queued ones are rejected.
+   */
+  abort(reason: string): void {
+    this.aborted = true;
+    this.abortReason = reason;
+
+    // Reject all queued items
+    const pending = this.queue.splice(0);
+    for (const item of pending) {
+      const error: RateLimitError = new Error(reason);
+      error.isRateLimit = true;
+      item.reject(error);
+    }
+  }
 
   /**
    * Schedule a request with priority support
    */
   async schedule(fn: () => Promise<Response>, priority: number = 0): Promise<Response> {
+    if (this.aborted) {
+      const error: RateLimitError = new Error(this.abortReason || 'Rate limiter aborted');
+      error.isRateLimit = true;
+      return Promise.reject(error);
+    }
+
+    if (this.requestCount >= this.config.requestBudget) {
+      const error: RateLimitError = new Error(
+        `Request budget exhausted (${this.config.requestBudget} requests). ` +
+        `Consider providing a GitHub token for higher limits.`
+      );
+      error.isRateLimit = true;
+      return Promise.reject(error);
+    }
+
     return new Promise<Response>((resolve, reject) => {
       this.queue.push({ fn, resolve, reject, priority });
       // Sort by priority (higher priority first)
@@ -72,22 +135,37 @@ class GitHubRateLimiter {
   }
 
   /**
-   * Process the request queue with sophisticated rate limiting
+   * Get the number of requests made in the current session
+   */
+  getRequestCount(): number {
+    return this.requestCount;
+  }
+
+  /**
+   * Check if the rate limiter has been aborted
+   */
+  isAborted(): boolean {
+    return this.aborted;
+  }
+
+  /**
+   * Process the request queue with rate limiting
    */
   private async processQueue(): Promise<void> {
-    if (this.processing || this.queue.length === 0 || this.activeRequests >= this.config.maxConcurrent) {
+    if (this.processing || this.queue.length === 0 || this.activeRequests >= this.config.maxConcurrent || this.aborted) {
       return;
     }
 
     this.processing = true;
 
-    while (this.queue.length > 0 && this.activeRequests < this.config.maxConcurrent) {
+    while (this.queue.length > 0 && this.activeRequests < this.config.maxConcurrent && !this.aborted) {
       const item = this.queue.shift()!;
       
       // Enforce minimum interval between requests
       await this.enforceRateLimit();
       
       this.activeRequests++;
+      this.requestCount++;
       this.executeRequest(item);
     }
 
@@ -125,14 +203,20 @@ class GitHubRateLimiter {
         retryCount++;
         const rateLimitError = error as RateLimitError;
         
-        // Check if we should retry
+        // If rate limited, abort everything immediately — do NOT retry
+        if (rateLimitError.isRateLimit || rateLimitError.status === 403 || rateLimitError.status === 429) {
+          this.activeRequests--;
+          this.abort(rateLimitError.message || 'GitHub API rate limit exceeded');
+          item.reject(rateLimitError);
+          return;
+        }
+        
+        // Only retry on server errors and network failures
         if (retryCount <= this.config.maxRetries && this.shouldRetry(rateLimitError)) {
           const backoffTime = Math.min(
             this.config.backoffMultiplier ** retryCount * 1000,
             this.config.maxBackoffTime
           );
-          
-          console.warn(`Request failed, retrying in ${backoffTime}ms (attempt ${retryCount}/${this.config.maxRetries})`);
           
           setTimeout(() => attemptRequest(), backoffTime);
         } else {
@@ -147,18 +231,17 @@ class GitHubRateLimiter {
   }
 
   /**
-   * Determine if an error is retryable
+   * Determine if an error is retryable (only server errors and network failures)
    */
   private shouldRetry(error: RateLimitError): boolean {
-    // Retry on network errors, rate limits, and server errors
+    // Network errors
     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-      return true; // Network error
+      return true;
     }
     
-    if (error.status) {
-      return error.status === 403 || // Rate limited
-             error.status === 429 || // Too many requests
-             error.status >= 500;    // Server errors
+    // Only retry server errors (5xx)
+    if (error.status && error.status >= 500) {
+      return true;
     }
     
     return false;
@@ -172,12 +255,43 @@ class GitHubRateLimiter {
       queueLength: this.queue.length,
       activeRequests: this.activeRequests,
       processing: this.processing,
+      requestCount: this.requestCount,
+      aborted: this.aborted,
     };
   }
 }
 
 // Global rate limiter instance
 const rateLimiter = new GitHubRateLimiter();
+
+/**
+ * Configure the rate limiter for a new getRepos() session.
+ * Must be called before starting requests.
+ */
+export function configureRateLimiter(options: RateLimiterConfig): void {
+  rateLimiter.configure(options);
+}
+
+/**
+ * Abort all pending requests.
+ */
+export function abortAllRequests(reason: string): void {
+  rateLimiter.abort(reason);
+}
+
+/**
+ * Check if the rate limiter has been aborted.
+ */
+export function isRateLimiterAborted(): boolean {
+  return rateLimiter.isAborted();
+}
+
+/**
+ * Get the total number of requests made in the current session.
+ */
+export function getRequestCount(): number {
+  return rateLimiter.getRequestCount();
+}
 
 /**
  * Browser-optimized fetch with rate limiting for GitHub API
@@ -194,18 +308,37 @@ async function fetchWithRateLimit(
     const remaining = res.headers.get("X-RateLimit-Remaining");
     const reset = res.headers.get("X-RateLimit-Reset");
 
-    // If we're rate limited, throw an error to trigger retry
+    // If we're rate limited, throw immediately (abort will handle the rest)
     if (res.status === 403 && remaining === "0") {
       const resetTime = reset ? parseInt(reset) * 1000 : Date.now() + 60000;
       const waitTime = Math.max(resetTime - Date.now(), 0);
       
-      const error: RateLimitError = new Error(`GitHub API rate limit exceeded. Reset at ${new Date(resetTime).toISOString()}`);
+      const error: RateLimitError = new Error(
+        `GitHub API rate limit exceeded. Resets at ${new Date(resetTime).toISOString()}. ` +
+        `Consider providing a token for 5,000 requests/hour.`
+      );
       error.status = 403;
       error.waitTime = waitTime;
+      error.isRateLimit = true;
       throw error;
     }
 
-    // Handle other HTTP errors
+    // Handle 429 Too Many Requests (secondary rate limit / abuse detection)
+    if (res.status === 429) {
+      const retryAfter = res.headers.get("Retry-After");
+      const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
+      
+      const error: RateLimitError = new Error(
+        `GitHub API abuse detection triggered (429). Retry after ${Math.ceil(waitTime / 1000)}s. ` +
+        `The library will abort remaining requests to prevent further blocking.`
+      );
+      error.status = 429;
+      error.waitTime = waitTime;
+      error.isRateLimit = true;
+      throw error;
+    }
+
+    // Handle other HTTP errors (404 etc.)
     if (!res.ok) {
       const error: RateLimitError = new Error(`HTTP ${res.status}: ${res.statusText}`);
       error.status = res.status;
