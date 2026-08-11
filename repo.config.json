@@ -3,6 +3,8 @@
   "title": "Portfolio-Github Integration",
   "info": "Custom, browser-native, dependency-free library designed to streamline integration of selected projects with a developer's portfolio.",
   "branch": "main",
+  "thumbnail": "assets/thumbnail.png",
+  "publicUrl":"https://www.npmjs.com/package/portfolio-github-integration",
   "customConfig": {
     "tags": ["typescript", "node",  "npm", "library"],
     "featured": true,
