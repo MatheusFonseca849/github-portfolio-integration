@@ -38,6 +38,7 @@ const portfolioData = await getRepos('your-github-username', {
   parallel: true,                      // Enable parallel processing (default: true)
   cacheMs: 60 * 60 * 1000,            // Cache results for 60 minutes (default: 60 min)
   debug: true,                         // Enable debug console logging (default: false)
+  sortBy: 'order',                     // Sort by config's order field (default: 'updated')
   onProgress: (processed, total, repoName) => {
     console.log(`Progress: ${processed}/${total} - Scanning ${repoName}`);
     // Update your UI progress bar here
@@ -121,6 +122,7 @@ Create a `repo.config.json` file in the **root directory** of each repository yo
   "publicUrl": "https://your-project-url.com",
   "thumbnail": "assets/screenshot.png",
   "branch": "main",
+  "order": 1,
   "customConfig": {
     "tags": ["react", "typescript"],
     "featured": true,
@@ -139,6 +141,7 @@ Create a `repo.config.json` file in the **root directory** of each repository yo
 | `publicUrl` | string | No | Public URL of the deployed project (e.g., Vercel/Netlify) |
 | `thumbnail` | string | No | Path to thumbnail image (relative to repo root) |
 | `branch` | string | No | Branch to use for thumbnail URL (defaults to "main") |
+| `order` | number | No | Display order (positive integer, lower = first). Used with `sortBy: 'order'` |
 | `customConfig` | object | No | Custom configuration object for additional metadata |
 
 ## Return Format
@@ -153,6 +156,7 @@ interface RepoMetadata {
   thumbnail?: string;     // Full URL to thumbnail image (optional)
   info: string;           // Project description
   title: string;          // Project title
+  order?: number;         // Display order from config (if set)
   customConfig?: Record<string, unknown>;  // Optional custom configuration object
 }
 ```
@@ -168,6 +172,7 @@ interface RepoMetadata {
     thumbnail: "https://raw.githubusercontent.com/username/my-portfolio-site/main/assets/screenshot.png",
     info: "A responsive portfolio website built with React",
     title: "Portfolio Website",
+    order: 1,
     customConfig: {
       tags: ["react", "typescript"],
       featured: true,
@@ -181,6 +186,7 @@ interface RepoMetadata {
     thumbnail: "https://raw.githubusercontent.com/username/data-visualization-tool/main/assets/preview.png",
     info: "Interactive charts and graphs for data analysis",
     title: "Data Viz Tool",
+    order: 2,
     customConfig: {
       tags: ["d3", "javascript"],
       featured: false,
@@ -211,6 +217,7 @@ interface GetReposOptions {
   cacheMs?: number;         // Cache duration in ms (default: 3600000 = 60 min)
   debug?: boolean;          // Enable debug console logging (default: false)
   requestBudget?: number;   // Max API requests per call (default: 55 unauth, 500 auth)
+  sortBy?: 'updated' | 'order' | 'title' | 'name' | ((a: RepoMetadata, b: RepoMetadata) => number);
   onProgress?: (processed: number, total: number, repoName: string) => void;
 }
 ```
@@ -227,13 +234,14 @@ interface RepoMetadata {
   thumbnail?: string;     // Full URL to thumbnail image (optional)
   info: string;           // Project description
   title: string;          // Project title
+  order?: number;         // Display order from config (if set)
   customConfig?: Record<string, unknown>;  // Custom configuration object
 }
 ```
 
 ## Authentication & Token Safety
 
-For most portfolio sites displaying **public repositories, no token is needed**. The GitHub API allows unauthenticated access for public data, and the library's built-in caching (20-minute TTL) ensures you stay well within the 60 requests/hour unauthenticated limit for typical portfolio traffic.
+For most portfolio sites displaying **public repositories, no token is needed**. The GitHub API allows unauthenticated access for public data, and the library's built-in caching (60-minute TTL) ensures you stay well within the 60 requests/hour unauthenticated limit for typical portfolio traffic.
 
 > **Never ship a GitHub token in client-side code.** Tokens embedded in browser bundles are visible to anyone who inspects the page. If your portfolio only displays public repos, simply omit the token.
 

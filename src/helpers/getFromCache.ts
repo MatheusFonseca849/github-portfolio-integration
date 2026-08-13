@@ -1,7 +1,7 @@
 import RepoMetadata from "../interfaces/RepoMetadata.js";
 
 // Simple in-memory cache for browser environments
-export const cache = new Map<string, { data: any; timestamp: number }>();
+export const cache = new Map<string, { data: RepoMetadata[]; timestamp: number }>();
 
 /**
  * Get data from cache if it's still valid

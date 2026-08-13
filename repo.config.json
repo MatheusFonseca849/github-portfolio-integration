@@ -2,6 +2,7 @@
   "published": true,
   "title": "Portfolio-Github Integration",
   "info": "Custom, browser-native, self-contained library designed to streamline integration of selected projects with a developer's portfolio.",
+  "order": 1,
   "branch": "main",
   "thumbnail": "assets/thumbnail.png",
   "publicUrl": "https://www.npmjs.com/package/portfolio-github-integration",

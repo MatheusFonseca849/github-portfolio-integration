@@ -68,3 +68,5 @@ assets/
 # Development scripts
 scripts/
 priority-analysis.js
+
+repo.config.json
