@@ -1,5 +1,5 @@
 import { jest } from '@jest/globals';
-import { getRepos } from '../../dist/index.js';
+import { getRepos, clearCache } from '../../dist/index.js';
 
 // --- Mock Helpers ---
 
@@ -9,12 +9,13 @@ function toBase64(str) {
 }
 
 /** Build a minimal GitHub repo object */
-function makeRepo(name, { fork = false, archived = false, daysOld = 10 } = {}) {
+function makeRepo(name, { fork = false, archived = false, daysOld = 10, default_branch = 'main' } = {}) {
   return {
     name,
     html_url: `https://github.com/testuser/${name}`,
     fork,
     archived,
+    default_branch,
     updated_at: new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000).toISOString(),
   };
 }
@@ -34,6 +35,21 @@ function makeConfigResponse(config, { path = 'repo.config.json' } = {}) {
   };
 }
 
+/** Build a Git Trees API response */
+function makeTreeResponse(items = []) {
+  return {
+    sha: 'tree-sha-123',
+    url: 'https://api.github.com/repos/testuser/repo/git/trees/main',
+    tree: items,
+    truncated: false,
+  };
+}
+
+/** Build a tree item (blob or tree) */
+function makeTreeItem(path, type = 'blob', sha = 'item-sha-' + path) {
+  return { path, mode: type === 'tree' ? '040000' : '100644', type, sha, url: '' };
+}
+
 /** Create a mock Response object */
 function mockResponse(body, { status = 200, ok = true } = {}) {
   return {
@@ -49,15 +65,27 @@ function mockResponse(body, { status = 200, ok = true } = {}) {
 }
 
 /**
- * Helper to create a fetch mock that serves configs from the root path.
- * Returns 404 for src/ paths unless explicitly provided.
+ * Helper to create a fetch mock that handles Trees API + Contents API.
+ * treeMap: { repoName: treeItems[] } — defines what the tree returns per repo
+ * configMap: { urlPattern: response } — defines content responses
  */
-function makeFetchMock(repoList, configMap = {}) {
+function makeFetchMock(repoList, { treeMap = {}, configMap = {} } = {}) {
   return async (url) => {
+    // Repo listing
     if (url.includes('/repos?')) {
       return mockResponse(repoList);
     }
-    // Check configMap for matching URL substrings
+    // Git Trees API
+    if (url.includes('/git/trees/')) {
+      for (const [repoName, treeItems] of Object.entries(treeMap)) {
+        if (url.includes(`/${repoName}/git/trees/`)) {
+          return mockResponse(makeTreeResponse(treeItems));
+        }
+      }
+      // Default: empty tree
+      return mockResponse(makeTreeResponse([]));
+    }
+    // Contents API or other — check configMap
     for (const [pattern, response] of Object.entries(configMap)) {
       if (url.includes(pattern)) {
         return response;
@@ -73,6 +101,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  clearCache(); // Ensure no stale cache between tests
 });
 
 // --- Tests ---
@@ -101,14 +130,19 @@ describe('getRepos', () => {
     });
   });
 
-  describe('Config file location', () => {
-    test('should find config in root directory (preferred)', async () => {
+  describe('Config file location (Trees API)', () => {
+    test('should find config in root directory via Trees API', async () => {
       const repos = [makeRepo('root-config')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/root-config/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'Root Config' })
-        ),
+        treeMap: {
+          'root-config': [makeTreeItem('repo.config.json')],
+        },
+        configMap: {
+          '/root-config/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Root Config' })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -121,11 +155,25 @@ describe('getRepos', () => {
       const repos = [makeRepo('src-config')];
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-      globalThis.fetch = makeFetchMock(repos, {
-        '/src-config/contents/src/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'Src Config' }, { path: 'src/repo.config.json' })
-        ),
-      });
+      // Root tree has src/ dir but no repo.config.json
+      const srcDirSha = 'src-dir-sha';
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        // Root tree: only has src/ directory
+        if (url.includes('/src-config/git/trees/main')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('src', 'tree', srcDirSha)]));
+        }
+        // src/ subtree: has repo.config.json
+        if (url.includes(`/src-config/git/trees/${srcDirSha}`)) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        // Contents API for src/repo.config.json
+        if (url.includes('/src-config/contents/src/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Src Config' }, { path: 'src/repo.config.json' }));
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
 
       const result = await getRepos('testuser', { cacheMs: 0 });
 
@@ -138,12 +186,21 @@ describe('getRepos', () => {
     test('should emit deprecation warning when config found in src/', async () => {
       const repos = [makeRepo('legacy-repo')];
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const srcDirSha = 'src-sha';
 
-      globalThis.fetch = makeFetchMock(repos, {
-        '/legacy-repo/contents/src/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'Legacy' }, { path: 'src/repo.config.json' })
-        ),
-      });
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        if (url.includes('/legacy-repo/git/trees/main')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('src', 'tree', srcDirSha)]));
+        }
+        if (url.includes(`/legacy-repo/git/trees/${srcDirSha}`)) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        if (url.includes('/legacy-repo/contents/src/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Legacy' }, { path: 'src/repo.config.json' }));
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
 
       await getRepos('testuser', { cacheMs: 0 });
 
@@ -162,9 +219,14 @@ describe('getRepos', () => {
       const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/modern-repo/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'Modern' })
-        ),
+        treeMap: {
+          'modern-repo': [makeTreeItem('repo.config.json')],
+        },
+        configMap: {
+          '/modern-repo/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Modern' })
+          ),
+        },
       });
 
       await getRepos('testuser', { cacheMs: 0 });
@@ -178,18 +240,34 @@ describe('getRepos', () => {
       const repos = [makeRepo('both-configs')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/both-configs/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'From Root' })
-        ),
-        '/both-configs/contents/src/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'From Src' }, { path: 'src/repo.config.json' })
-        ),
+        treeMap: {
+          // Root tree has repo.config.json AND src/ dir
+          'both-configs': [makeTreeItem('repo.config.json'), makeTreeItem('src', 'tree')],
+        },
+        configMap: {
+          '/both-configs/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'From Root' })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
 
       expect(result).toHaveLength(1);
       expect(result[0].title).toBe('From Root');
+    });
+
+    test('should skip repos with no config in tree', async () => {
+      const repos = [makeRepo('no-config')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: {
+          'no-config': [makeTreeItem('README.md'), makeTreeItem('index.js')],
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result).toEqual([]);
     });
   });
 
@@ -201,9 +279,15 @@ describe('getRepos', () => {
       ];
 
       globalThis.fetch = async (url) => {
-        if (url.includes('/repos?')) {
-          return mockResponse(repos);
+        if (url.includes('/repos?')) return mockResponse(repos);
+        // Trees API
+        if (url.includes('/published-project/git/trees/main')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
         }
+        if (url.includes('/unpublished-project/git/trees/main')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        // Contents API
         if (url.includes('/published-project/contents/repo.config.json')) {
           return mockResponse(makeConfigResponse({
             published: true,
@@ -243,9 +327,14 @@ describe('getRepos', () => {
       ];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/active-repo/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'Active' })
-        ),
+        treeMap: {
+          'active-repo': [makeTreeItem('repo.config.json')],
+        },
+        configMap: {
+          '/active-repo/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Active' })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -257,7 +346,9 @@ describe('getRepos', () => {
     test('should return empty array when no repos have config files', async () => {
       const repos = [makeRepo('no-config-repo')];
 
-      globalThis.fetch = makeFetchMock(repos, {});
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'no-config-repo': [makeTreeItem('README.md')] },
+      });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
       expect(result).toEqual([]);
@@ -267,9 +358,12 @@ describe('getRepos', () => {
       const repos = [makeRepo('no-thumb')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/no-thumb/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'No Thumb' })
-        ),
+        treeMap: { 'no-thumb': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/no-thumb/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'No Thumb' })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -284,16 +378,19 @@ describe('getRepos', () => {
       const repos = [makeRepo('bad-json')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/bad-json/contents/repo.config.json': mockResponse({
-          content: toBase64('not valid json {{{'),
-          encoding: 'base64',
-          name: 'repo.config.json',
-          path: 'repo.config.json',
-          sha: 'abc',
-          size: 10,
-          type: 'file',
-          url: '',
-        }),
+        treeMap: { 'bad-json': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/bad-json/contents/repo.config.json': mockResponse({
+            content: toBase64('not valid json {{{'),
+            encoding: 'base64',
+            name: 'repo.config.json',
+            path: 'repo.config.json',
+            sha: 'abc',
+            size: 10,
+            type: 'file',
+            url: '',
+          }),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -304,16 +401,19 @@ describe('getRepos', () => {
       const repos = [makeRepo('array-config')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/array-config/contents/repo.config.json': mockResponse({
-          content: toBase64(JSON.stringify([1, 2, 3])),
-          encoding: 'base64',
-          name: 'repo.config.json',
-          path: 'repo.config.json',
-          sha: 'abc',
-          size: 10,
-          type: 'file',
-          url: '',
-        }),
+        treeMap: { 'array-config': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/array-config/contents/repo.config.json': mockResponse({
+            content: toBase64(JSON.stringify([1, 2, 3])),
+            encoding: 'base64',
+            name: 'repo.config.json',
+            path: 'repo.config.json',
+            sha: 'abc',
+            size: 10,
+            type: 'file',
+            url: '',
+          }),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -324,9 +424,12 @@ describe('getRepos', () => {
       const repos = [makeRepo('bad-published')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/bad-published/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: 'yes', title: 'Bad' })
-        ),
+        treeMap: { 'bad-published': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/bad-published/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: 'yes', title: 'Bad' })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -341,9 +444,8 @@ describe('getRepos', () => {
 
       globalThis.fetch = async (url, options) => {
         capturedHeaders = options?.headers || {};
-        if (url.includes('/repos?')) {
-          return mockResponse(repos);
-        }
+        if (url.includes('/repos?')) return mockResponse(repos);
+        if (url.includes('/git/trees/')) return mockResponse(makeTreeResponse([]));
         return mockResponse(null, { status: 404, ok: false });
       };
 
@@ -356,7 +458,9 @@ describe('getRepos', () => {
       const repos = [makeRepo('repo-a'), makeRepo('repo-b')];
       const progressCalls = [];
 
-      globalThis.fetch = makeFetchMock(repos, {});
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'repo-a': [], 'repo-b': [] },
+      });
 
       await getRepos('testuser', {
         cacheMs: 0,
@@ -374,9 +478,12 @@ describe('getRepos', () => {
       const repos = [makeRepo('seq-repo')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/seq-repo/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true, title: 'Sequential' })
-        ),
+        treeMap: { 'seq-repo': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/seq-repo/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Sequential' })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { parallel: false, cacheMs: 0 });
@@ -391,9 +498,12 @@ describe('getRepos', () => {
       const repos = [makeRepo('fallback-title')];
 
       globalThis.fetch = makeFetchMock(repos, {
-        '/fallback-title/contents/repo.config.json': mockResponse(
-          makeConfigResponse({ published: true })
-        ),
+        treeMap: { 'fallback-title': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/fallback-title/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true })
+          ),
+        },
       });
 
       const result = await getRepos('testuser', { cacheMs: 0 });
@@ -401,6 +511,330 @@ describe('getRepos', () => {
       expect(result[0].title).toBe('fallback-title');
       expect(result[0].info).toBe('');
       expect(result[0].publicUrl).toBe('');
+    });
+  });
+
+  describe('Rate limit guardrails', () => {
+    test('should abort all requests on 403 rate limit', async () => {
+      const repos = [makeRepo('repo-a'), makeRepo('repo-b'), makeRepo('repo-c')];
+      let requestCount = 0;
+
+      globalThis.fetch = async (url) => {
+        requestCount++;
+        if (url.includes('/repos?')) return mockResponse(repos);
+        // First tree request succeeds, second triggers 403
+        if (url.includes('/repo-a/git/trees/')) {
+          return mockResponse(makeTreeResponse([]));
+        }
+        if (url.includes('/repo-b/git/trees/')) {
+          return {
+            ok: false,
+            status: 403,
+            statusText: 'Forbidden',
+            json: async () => ({ message: 'API rate limit exceeded' }),
+            headers: new Map([
+              ['X-RateLimit-Remaining', '0'],
+              ['X-RateLimit-Reset', String(Math.floor(Date.now() / 1000) + 3600)],
+            ]),
+          };
+        }
+        return mockResponse(makeTreeResponse([]));
+      };
+
+      // Should not throw — returns partial results
+      const result = await getRepos('testuser', { cacheMs: 0, parallel: false });
+
+      // Should have aborted after the 403 — repo-c should not be processed
+      expect(result).toEqual([]);
+    });
+
+    test('should return partial results when rate limit hit mid-scan', async () => {
+      const repos = [makeRepo('good-repo'), makeRepo('bad-repo')];
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        if (url.includes('/good-repo/git/trees/')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        if (url.includes('/good-repo/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Good' }));
+        }
+        if (url.includes('/bad-repo/git/trees/')) {
+          return {
+            ok: false,
+            status: 403,
+            statusText: 'Forbidden',
+            json: async () => ({}),
+            headers: new Map([
+              ['X-RateLimit-Remaining', '0'],
+              ['X-RateLimit-Reset', String(Math.floor(Date.now() / 1000) + 3600)],
+            ]),
+          };
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
+
+      const result = await getRepos('testuser', { cacheMs: 0, parallel: false });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].title).toBe('Good');
+
+      warnSpy.mockRestore();
+    });
+
+    test('should emit warning when scanning 30+ repos without token', async () => {
+      const repos = Array.from({ length: 31 }, (_, i) => makeRepo(`repo-${i}`));
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        if (url.includes('/git/trees/')) return mockResponse(makeTreeResponse([]));
+        return mockResponse(null, { status: 404, ok: false });
+      };
+
+      await getRepos('testuser', { cacheMs: 0 });
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('31 repositories to scan without a token')
+      );
+
+      warnSpy.mockRestore();
+    }, 15000);
+  });
+
+  describe('Cache', () => {
+    test('clearCache() should remove all cached entries', async () => {
+      const repos = [makeRepo('cached-repo')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'cached-repo': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/cached-repo/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Cached' })
+          ),
+        },
+      });
+
+      // First call populates cache
+      const result1 = await getRepos('testuser', { cacheMs: 60000 });
+      expect(result1).toHaveLength(1);
+
+      // Clear cache
+      clearCache();
+
+      // Change mock to return different data
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'cached-repo': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/cached-repo/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Updated' })
+          ),
+        },
+      });
+
+      // Second call should fetch fresh data
+      const result2 = await getRepos('testuser', { cacheMs: 60000 });
+      expect(result2[0].title).toBe('Updated');
+    });
+
+    test('clearCache(username) should only remove that user\'s entries', async () => {
+      const repos = [makeRepo('repo-x')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'repo-x': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/repo-x/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'X' })
+          ),
+        },
+      });
+
+      // Populate cache for testuser
+      await getRepos('testuser', { cacheMs: 60000 });
+
+      // Clear only otheruser's cache (should not affect testuser)
+      clearCache('otheruser');
+
+      // testuser should still be cached (no fetch needed)
+      let fetchCalled = false;
+      globalThis.fetch = async () => { fetchCalled = true; return mockResponse([]); };
+
+      const result = await getRepos('testuser', { cacheMs: 60000 });
+      expect(fetchCalled).toBe(false);
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('Sorting (sortBy)', () => {
+    /**
+     * Helper: create 3 repos with order values and set up fetch mock.
+     * Returns the repo names in the order they were given to the mock API.
+     */
+    function setupSortableRepos() {
+      const repos = [
+        makeRepo('zoo-project', { daysOld: 1 }),
+        makeRepo('alpha-project', { daysOld: 5 }),
+        makeRepo('mid-project', { daysOld: 3 }),
+      ];
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        // Trees API
+        if (url.includes('/git/trees/')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        // Contents API
+        if (url.includes('/zoo-project/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Zebra App', order: 3 }));
+        }
+        if (url.includes('/alpha-project/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Alpha App', order: 1 }));
+        }
+        if (url.includes('/mid-project/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Mango App', order: 2 }));
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
+
+      return repos;
+    }
+
+    test('default sort (no sortBy) preserves API order', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0 });
+
+      expect(result).toHaveLength(3);
+      // API order: zoo, alpha, mid (as returned by mock)
+      expect(result[0].name).toBe('zoo-project');
+      expect(result[1].name).toBe('alpha-project');
+      expect(result[2].name).toBe('mid-project');
+    });
+
+    test('sortBy: "order" sorts by order field ascending', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'order' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Alpha App');   // order: 1
+      expect(result[1].title).toBe('Mango App');   // order: 2
+      expect(result[2].title).toBe('Zebra App');   // order: 3
+    });
+
+    test('sortBy: "order" puts repos without order last, sub-sorted by title', async () => {
+      const repos = [
+        makeRepo('ordered-repo', { daysOld: 10 }),
+        makeRepo('no-order-b', { daysOld: 5 }),
+        makeRepo('no-order-a', { daysOld: 1 }),
+      ];
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        if (url.includes('/git/trees/')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        if (url.includes('/ordered-repo/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Ordered', order: 1 }));
+        }
+        if (url.includes('/no-order-b/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Beta' }));
+        }
+        if (url.includes('/no-order-a/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Alpha' }));
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
+
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'order' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Ordered');  // has order: 1
+      expect(result[1].title).toBe('Alpha');    // no order, alpha by title
+      expect(result[2].title).toBe('Beta');     // no order, beta by title
+    });
+
+    test('sortBy: "title" sorts alphabetically by title', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'title' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Alpha App');
+      expect(result[1].title).toBe('Mango App');
+      expect(result[2].title).toBe('Zebra App');
+    });
+
+    test('sortBy: "name" sorts alphabetically by repo name', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'name' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].name).toBe('alpha-project');
+      expect(result[1].name).toBe('mid-project');
+      expect(result[2].name).toBe('zoo-project');
+    });
+
+    test('sortBy: custom comparator function', async () => {
+      setupSortableRepos();
+      // Custom: reverse alphabetical by title
+      const result = await getRepos('testuser', {
+        cacheMs: 0,
+        sortBy: (a, b) => b.title.localeCompare(a.title),
+      });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Zebra App');
+      expect(result[1].title).toBe('Mango App');
+      expect(result[2].title).toBe('Alpha App');
+    });
+
+    test('order field: valid positive integer is preserved on RepoMetadata', async () => {
+      const repos = [makeRepo('ordered')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'ordered': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/ordered/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Ordered', order: 5 })
+          ),
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result[0].order).toBe(5);
+    });
+
+    test('order field: non-integer is silently ignored', async () => {
+      const repos = [makeRepo('decimal-order')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'decimal-order': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/decimal-order/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Decimal', order: 1.5 })
+          ),
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result).toHaveLength(1);
+      expect(result[0].order).toBeUndefined();
+    });
+
+    test('order field: negative number is silently ignored', async () => {
+      const repos = [makeRepo('neg-order')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'neg-order': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/neg-order/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Negative', order: -1 })
+          ),
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result).toHaveLength(1);
+      expect(result[0].order).toBeUndefined();
     });
   });
 });

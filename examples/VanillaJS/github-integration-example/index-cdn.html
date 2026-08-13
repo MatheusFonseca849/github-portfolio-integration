@@ -72,9 +72,9 @@
                             id="cacheMs"
                             type="number"
                             min="0"
-                            value="20"
+                            value="60"
                         />
-                        <small>Cache results for faster subsequent requests (current: <span id="cache-display">20m</span>)</small>
+                        <small>Cache results for faster subsequent requests (current: <span id="cache-display">1h 0m</span>)</small>
                     </div>
 
                     <div class="form-group checkbox-group">
@@ -126,10 +126,10 @@
 
             <div id="no-results" class="no-results" style="display: none;">
                 <h3>No Portfolio Repositories Found</h3>
-                <p>No repositories with <code>src/repo.config.json</code> files containing <code>"published": true</code> were found.</p>
+                <p>No repositories with <code>repo.config.json</code> files containing <code>"published": true</code> were found.</p>
                 <p>To test this library:</p>
                 <ol>
-                    <li>Create a <code>src/repo.config.json</code> file in one of your repositories</li>
+                    <li>Create a <code>repo.config.json</code> file in the root of one of your repositories</li>
                     <li>Add the following content:</li>
                 </ol>
                 <pre class="config-example">{

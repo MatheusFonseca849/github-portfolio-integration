@@ -1,0 +1,15 @@
+{
+  "published": true,
+  "title": "Portfolio-Github Integration",
+  "info": "Custom, browser-native, self-contained library designed to streamline integration of selected projects with a developer's portfolio.",
+  "order": 1,
+  "branch": "main",
+  "thumbnail": "assets/thumbnail.png",
+  "publicUrl": "https://www.npmjs.com/package/portfolio-github-integration",
+  "customConfig": {
+    "tags": ["typescript", "node",  "npm", "library"],
+    "featured": true,
+    "difficulty": "intermediate",
+    "infoPT": "Biblioteca personalizada, browser-native, livre de dependências externas, criada para facilitar a integração de projetos selecionados ao portfólio de um desenvolvedor."
+  }
+}

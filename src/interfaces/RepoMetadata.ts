@@ -5,6 +5,7 @@ interface RepoMetadata {
     thumbnail?: string | null;
     info: string;
     title: string;
+    order?: number;
     customConfig?: Record<string, unknown>;
 }
 

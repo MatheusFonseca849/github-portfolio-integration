@@ -7,7 +7,7 @@ function App() {
   const [token, setToken] = useState('');
   const [maxRepos, setMaxRepos] = useState(100);
   const [parallel, setParallel] = useState(true);
-  const [cacheMs, setCacheMs] = useState(20 * 60 * 1000); // 20 minutes
+  const [cacheMs, setCacheMs] = useState(60 * 60 * 1000); // 60 minutes
   const [debug, setDebug] = useState(false);
   const [loading, setLoading] = useState(false);
   const [repos, setRepos] = useState([]);
@@ -31,7 +31,7 @@ function App() {
         ...(token.trim() && { token: token.trim() }),
         maxRepos: parseInt(maxRepos) || 100,
         parallel,
-        cacheMs: parseInt(cacheMs) || 20 * 60 * 1000,
+        cacheMs: parseInt(cacheMs) || 60 * 60 * 1000,
         debug,
         onProgress: (current, total, repoName) => {
           setProgress({ current, total, repoName });
@@ -221,10 +221,10 @@ function App() {
         {!loading && repos.length === 0 && username && !error && (
           <div className="no-results">
             <h3>No Portfolio Repositories Found</h3>
-            <p>No repositories with <code>src/repo.config.json</code> files containing <code>"published": true</code> were found.</p>
+            <p>No repositories with <code>repo.config.json</code> files containing <code>"published": true</code> were found.</p>
             <p>To test this library:</p>
             <ol>
-              <li>Create a <code>src/repo.config.json</code> file in one of your repositories</li>
+              <li>Create a <code>repo.config.json</code> file in the root of one of your repositories</li>
               <li>Add the following content:</li>
             </ol>
             <pre className="config-example">
