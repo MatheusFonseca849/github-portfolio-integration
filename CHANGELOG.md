@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-08-13
+
+### Added
+- **`sortBy` option**: New option in `GetReposOptions` to control result ordering. Accepts:
+  - `'updated'` (default) -- preserve GitHub API order (last updated first)
+  - `'order'` -- sort by `repo.config.json`'s `order` field ascending; repos without it appear last, sub-sorted alphabetically by title
+  - `'title'` -- alphabetical by title (case-insensitive)
+  - `'name'` -- alphabetical by repo name (case-insensitive)
+  - `(a, b) => number` -- custom comparator receiving `RepoMetadata` objects
+- **`order` field in `repo.config.json`**: Optional positive integer to control display position when using `sortBy: 'order'`
+- **`order` on `RepoMetadata`**: The `order` value (if set) is now exposed on returned results for consumer-side logic
+
+### Technical Details
+- Sorting is applied client-side after all repos are collected (no additional API requests)
+- Cache stores unsorted data; sorting is applied on every return so different `sortBy` values don't bust the cache
+- Invalid `order` values (non-integer, negative, zero) are silently stripped without rejecting the config
+- Uses `String.prototype.localeCompare` with `sensitivity: 'base'` for case-insensitive string sorting
+
 ## [2.6.0] - 2026-08-10
 
 ### Added

@@ -665,4 +665,176 @@ describe('getRepos', () => {
       expect(result).toHaveLength(1);
     });
   });
+
+  describe('Sorting (sortBy)', () => {
+    /**
+     * Helper: create 3 repos with order values and set up fetch mock.
+     * Returns the repo names in the order they were given to the mock API.
+     */
+    function setupSortableRepos() {
+      const repos = [
+        makeRepo('zoo-project', { daysOld: 1 }),
+        makeRepo('alpha-project', { daysOld: 5 }),
+        makeRepo('mid-project', { daysOld: 3 }),
+      ];
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        // Trees API
+        if (url.includes('/git/trees/')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        // Contents API
+        if (url.includes('/zoo-project/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Zebra App', order: 3 }));
+        }
+        if (url.includes('/alpha-project/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Alpha App', order: 1 }));
+        }
+        if (url.includes('/mid-project/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Mango App', order: 2 }));
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
+
+      return repos;
+    }
+
+    test('default sort (no sortBy) preserves API order', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0 });
+
+      expect(result).toHaveLength(3);
+      // API order: zoo, alpha, mid (as returned by mock)
+      expect(result[0].name).toBe('zoo-project');
+      expect(result[1].name).toBe('alpha-project');
+      expect(result[2].name).toBe('mid-project');
+    });
+
+    test('sortBy: "order" sorts by order field ascending', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'order' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Alpha App');   // order: 1
+      expect(result[1].title).toBe('Mango App');   // order: 2
+      expect(result[2].title).toBe('Zebra App');   // order: 3
+    });
+
+    test('sortBy: "order" puts repos without order last, sub-sorted by title', async () => {
+      const repos = [
+        makeRepo('ordered-repo', { daysOld: 10 }),
+        makeRepo('no-order-b', { daysOld: 5 }),
+        makeRepo('no-order-a', { daysOld: 1 }),
+      ];
+
+      globalThis.fetch = async (url) => {
+        if (url.includes('/repos?')) return mockResponse(repos);
+        if (url.includes('/git/trees/')) {
+          return mockResponse(makeTreeResponse([makeTreeItem('repo.config.json')]));
+        }
+        if (url.includes('/ordered-repo/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Ordered', order: 1 }));
+        }
+        if (url.includes('/no-order-b/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Beta' }));
+        }
+        if (url.includes('/no-order-a/contents/repo.config.json')) {
+          return mockResponse(makeConfigResponse({ published: true, title: 'Alpha' }));
+        }
+        return mockResponse(null, { status: 404, ok: false });
+      };
+
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'order' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Ordered');  // has order: 1
+      expect(result[1].title).toBe('Alpha');    // no order, alpha by title
+      expect(result[2].title).toBe('Beta');     // no order, beta by title
+    });
+
+    test('sortBy: "title" sorts alphabetically by title', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'title' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Alpha App');
+      expect(result[1].title).toBe('Mango App');
+      expect(result[2].title).toBe('Zebra App');
+    });
+
+    test('sortBy: "name" sorts alphabetically by repo name', async () => {
+      setupSortableRepos();
+      const result = await getRepos('testuser', { cacheMs: 0, sortBy: 'name' });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].name).toBe('alpha-project');
+      expect(result[1].name).toBe('mid-project');
+      expect(result[2].name).toBe('zoo-project');
+    });
+
+    test('sortBy: custom comparator function', async () => {
+      setupSortableRepos();
+      // Custom: reverse alphabetical by title
+      const result = await getRepos('testuser', {
+        cacheMs: 0,
+        sortBy: (a, b) => b.title.localeCompare(a.title),
+      });
+
+      expect(result).toHaveLength(3);
+      expect(result[0].title).toBe('Zebra App');
+      expect(result[1].title).toBe('Mango App');
+      expect(result[2].title).toBe('Alpha App');
+    });
+
+    test('order field: valid positive integer is preserved on RepoMetadata', async () => {
+      const repos = [makeRepo('ordered')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'ordered': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/ordered/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Ordered', order: 5 })
+          ),
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result[0].order).toBe(5);
+    });
+
+    test('order field: non-integer is silently ignored', async () => {
+      const repos = [makeRepo('decimal-order')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'decimal-order': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/decimal-order/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Decimal', order: 1.5 })
+          ),
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result).toHaveLength(1);
+      expect(result[0].order).toBeUndefined();
+    });
+
+    test('order field: negative number is silently ignored', async () => {
+      const repos = [makeRepo('neg-order')];
+
+      globalThis.fetch = makeFetchMock(repos, {
+        treeMap: { 'neg-order': [makeTreeItem('repo.config.json')] },
+        configMap: {
+          '/neg-order/contents/repo.config.json': mockResponse(
+            makeConfigResponse({ published: true, title: 'Negative', order: -1 })
+          ),
+        },
+      });
+
+      const result = await getRepos('testuser', { cacheMs: 0 });
+      expect(result).toHaveLength(1);
+      expect(result[0].order).toBeUndefined();
+    });
+  });
 });

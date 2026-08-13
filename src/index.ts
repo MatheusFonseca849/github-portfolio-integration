@@ -10,6 +10,10 @@ import fetchWithRateLimit, {
   RateLimitError,
 } from "./helpers/fetchWithRateLimit.js";
 import GetReposOptions from "./interfaces/GetReposOptions.js";
+import type { SortBy } from "./interfaces/GetReposOptions.js";
+
+// Re-export types for consumer use
+export type { RepoMetadata, GetReposOptions, SortBy };
 import { getFromCache } from "./helpers/getFromCache.js";
 import { cache } from "./helpers/getFromCache.js";
 
@@ -51,6 +55,7 @@ interface RepoConfig {
   publicUrl?: string;
   thumbnail?: string;
   branch?: string;
+  order?: number;
   customConfig?: Record<string, unknown>;
 }
 
@@ -74,6 +79,13 @@ function validateRepoConfig(parsed: unknown): RepoConfig | null {
     if (field in obj && typeof obj[field] !== 'string') return null;
   }
 
+  // `order` must be a positive integer if present; invalid values are stripped (not rejected)
+  if ('order' in obj) {
+    if (typeof obj.order !== 'number' || !Number.isFinite(obj.order) || obj.order < 1 || !Number.isInteger(obj.order)) {
+      delete obj.order;
+    }
+  }
+
   // `customConfig` must be a plain object if present
   if ('customConfig' in obj && (typeof obj.customConfig !== 'object' || obj.customConfig === null || Array.isArray(obj.customConfig))) {
     return null;
@@ -87,6 +99,45 @@ function validateRepoConfig(parsed: unknown): RepoConfig | null {
  */
 function setCache(key: string, data: RepoMetadata[]): void {
   cache.set(key, { data, timestamp: Date.now() });
+}
+
+/**
+ * Sort portfolio repos based on the sortBy option.
+ * Default ('updated') preserves the GitHub API order (already sorted by updated_at desc).
+ */
+function sortRepos(repos: RepoMetadata[], sortBy: SortBy | undefined): RepoMetadata[] {
+  if (!sortBy || sortBy === 'updated') {
+    return repos;
+  }
+
+  if (typeof sortBy === 'function') {
+    return [...repos].sort(sortBy);
+  }
+
+  switch (sortBy) {
+    case 'order':
+      return [...repos].sort((a, b) => {
+        const aHasOrder = a.order !== undefined;
+        const bHasOrder = b.order !== undefined;
+        if (aHasOrder && bHasOrder) return a.order! - b.order!;
+        if (aHasOrder) return -1;
+        if (bHasOrder) return 1;
+        return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+      });
+
+    case 'title':
+      return [...repos].sort((a, b) =>
+        a.title.localeCompare(b.title, undefined, { sensitivity: 'base' })
+      );
+
+    case 'name':
+      return [...repos].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      );
+
+    default:
+      return repos;
+  }
 }
 
 /**
@@ -147,7 +198,7 @@ export async function getRepos(
   const cached = getFromCache(cacheKey, config.cacheMs || 0);
   if (cached) {
     config.debug && console.log(`${LOG_PREFIX} Returning cached results (${cached.length} repos)`);
-    return cached;
+    return sortRepos(cached, config.sortBy);
   }
 
   // Configure rate limiter for this session
@@ -202,8 +253,11 @@ export async function getRepos(
     );
   }
 
-  // Cache the results (even partial, to avoid re-triggering the limit)
+  // Cache unsorted results (sorting is applied on every return so different sortBy values don't bust cache)
   setCache(cacheKey, portfolioRepos);
+
+  // Sort results based on sortBy option
+  portfolioRepos = sortRepos(portfolioRepos, config.sortBy);
 
   config.debug && console.log(`${LOG_PREFIX} Found ${portfolioRepos.length} published repositories (${getRequestCount()} API requests used)`);
   return portfolioRepos;
@@ -380,6 +434,10 @@ async function processSingleRepo(
     title: repoConfig.title || repo.name,
     customConfig: repoConfig.customConfig,
   };
+
+  if (repoConfig.order !== undefined) {
+    results.order = repoConfig.order;
+  }
 
   const thumbnailUrl = repoConfig.thumbnail
     ? `https://raw.githubusercontent.com/${username}/${repo.name}/${repoConfig.branch || branch}/${repoConfig.thumbnail}`

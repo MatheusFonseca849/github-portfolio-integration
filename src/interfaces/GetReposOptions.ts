@@ -1,3 +1,10 @@
+import RepoMetadata from "./RepoMetadata.js";
+
+/** Built-in sort presets or a custom comparator function */
+export type SortByPreset = 'updated' | 'order' | 'title' | 'name';
+export type SortByComparator = (a: RepoMetadata, b: RepoMetadata) => number;
+export type SortBy = SortByPreset | SortByComparator;
+
 interface GetReposOptions {
     /** GitHub Personal Access Token for private repositories */
     token?: string;
@@ -13,6 +20,8 @@ interface GetReposOptions {
     debug?: boolean;
     /** Maximum number of API requests per getRepos() call (default: 55 unauthenticated, 500 authenticated) */
     requestBudget?: number;
+    /** Sort order for results (default: 'updated') */
+    sortBy?: SortBy;
   }
 
   export default GetReposOptions
